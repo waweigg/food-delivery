@@ -1,0 +1,246 @@
+# Add to the database-only compose.yaml: docker compose -f compose.yaml -f compose.services.yaml up --build
+x-identity-env: &identity-env
+  APP_ENV: development
+  DATABASE_URL: postgresql://food:local_only@database:5432/food_development
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set a random secret in the root .env file}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:8080}
+  SMTP_URL: smtp://mailpit:1025
+  MAIL_FROM: Food Delivery <development@example.test>
+  TRUST_GATEWAY: 'true'
+x-restaurant-env: &restaurant-env
+  APP_ENV: development
+  PORT: '3001'
+  RESTAURANT_DATABASE_URL: postgresql://restaurants:local_restaurants_only@restaurant-database:5432/restaurants_development
+  IDENTITY_URL: http://identity:3000
+  RESTAURANT_SERVICE_TOKEN: ${RESTAURANT_SERVICE_TOKEN:?Set a separate random restaurant service token in the root .env}
+  MENU_CURRENCY: INR
+  DELIVERY_RADIUS_METRES: ${DELIVERY_RADIUS_METRES:-5000}
+  DELIVERY_FEE_MINOR: ${DELIVERY_FEE_MINOR:-3000}
+  OTHER_CHARGES_MINOR: ${OTHER_CHARGES_MINOR:-0}
+  MENU_S3_ENDPOINT: http://object-storage:8333
+  MENU_S3_REGION: us-east-1
+  MENU_S3_BUCKET: menu-photos
+  MENU_S3_ACCESS_KEY: ${MENU_S3_ACCESS_KEY:?Set a local storage access key in the root .env}
+  MENU_S3_SECRET_KEY: ${MENU_S3_SECRET_KEY:?Set a local storage secret in the root .env}
+services:
+  drivers-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: drivers
+      POSTGRES_PASSWORD: local_drivers_only
+      POSTGRES_DB: drivers_development
+    volumes: ["drivers-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drivers -d drivers_development"]
+      interval: 3s
+      retries: 10
+  drivers:
+    image: food-delivery-drivers:dev
+    build: ./apps/drivers
+    environment: &driver-env
+      DISPATCH_ENABLED: 'true'
+      DISPATCH_ORDER_TOKEN: ${DISPATCH_ORDER_TOKEN:?Configure dispatch service token}
+      ORDERS_URL: http://orders:3002
+      RESTAURANTS_URL: http://restaurants:3001
+      DISPATCH_RADIUS_METRES: '5000'
+      DISPATCH_OFFER_SECONDS: '45'
+      DISPATCH_MAX_ATTEMPTS: '5'
+      DISPATCH_LIMIT_SECONDS: '300'
+      APP_ENV: development
+      DRIVERS_DATABASE_URL: postgresql://drivers:local_drivers_only@drivers-db:5432/drivers_development
+      IDENTITY_URL: http://identity:3000
+      DRIVER_SERVICE_TOKEN: ${DRIVER_SERVICE_TOKEN:?Configure driver service token}
+      DRIVER_STALE_SECONDS: '60'
+      DRIVER_RETENTION_SECONDS: '900'
+    depends_on:
+      drivers-db: {condition: service_healthy}
+      identity: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3004/drivers-health').then(r=>process.exit(r.ok?0:1))"]
+      interval: 3s
+      retries: 10
+  dispatch-worker:
+    image: food-delivery-drivers:dev
+    command: ["node", "service.mjs", "--worker"]
+    environment: *driver-env
+    depends_on:
+      drivers: {condition: service_healthy}
+      orders: {condition: service_healthy}
+      restaurants: {condition: service_healthy}
+  database:
+    # Full-stack services connect over Docker's private network, not a host port.
+    ports: !reset []
+  object-storage:
+    image: chrislusf/seaweedfs:latest
+    command: [mini, '-dir=/data', '-ip=object-storage', '-ip.bind=0.0.0.0']
+    environment:
+      AWS_ACCESS_KEY_ID: ${MENU_S3_ACCESS_KEY:?Set a local storage access key}
+      AWS_SECRET_ACCESS_KEY: ${MENU_S3_SECRET_KEY:?Set a local storage secret}
+      S3_BUCKET: menu-photos
+    volumes: ["menu-photos:/data"]
+  restaurant-database:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: restaurants
+      POSTGRES_PASSWORD: local_restaurants_only
+      POSTGRES_DB: restaurants_development
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: ["restaurant-database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restaurants -d restaurants_development"]
+      interval: 5s
+      retries: 10
+  restaurants-migrate:
+    image: food-delivery-restaurants:dev
+    build: ./apps/restaurants
+    command: ["sh", "-c", "npm run migrate && node dist/init-database.js"]
+    environment: *restaurant-env
+    depends_on:
+      restaurant-database:
+        condition: service_healthy
+  restaurants:
+    image: food-delivery-restaurants:dev
+    build: ./apps/restaurants
+    environment: *restaurant-env
+    depends_on:
+      object-storage:
+        condition: service_started
+      restaurants-migrate:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/restaurants-health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+  migrate:
+    image: food-delivery-identity:dev
+    build: ./apps/api
+    command: ["sh", "-c", "npm run migrate && node dist/init-database.js"]
+    environment: *identity-env
+    depends_on:
+      database:
+        condition: service_healthy
+  identity:
+    image: food-delivery-identity:dev
+    build: ./apps/api
+    environment: *identity-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+  identity-worker:
+    image: food-delivery-identity:dev
+    command: ["npm", "run", "worker"]
+    environment: *identity-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  payments-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: local_payments_only
+      POSTGRES_DB: payments_development
+    volumes: ["payments-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U payments -d payments_development"]
+      interval: 3s
+      retries: 10
+  payments:
+    image: food-delivery-payments:dev
+    build: ./apps/payments
+    environment:
+      APP_ENV: development
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-local-test}
+      STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
+      STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
+      PAYMENT_RETURN_URL: ${PAYMENT_RETURN_URL:-}
+      PAYMENTS_DATABASE_URL: postgresql://payments:local_payments_only@payments-db:5432/payments_development
+      PAYMENTS_ORDER_TOKEN: ${PAYMENTS_ORDER_TOKEN:?Configure local payment service token}
+      PAYMENTS_WEBHOOK_SECRET: ${PAYMENTS_WEBHOOK_SECRET:?Configure local webhook signing secret}
+      IDENTITY_URL: http://identity:3000
+      ORDERS_URL: http://orders:3002
+    depends_on:
+      payments-db: {condition: service_healthy}
+      orders: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://localhost:3003/health').then(r=>process.exit(r.ok?0:1))"]
+      interval: 3s
+      retries: 12
+  orders-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: local_orders_only
+      POSTGRES_DB: orders_development
+    volumes: ["orders-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U orders -d orders_development"]
+      interval: 3s
+      retries: 10
+  orders:
+    image: food-delivery-orders:dev
+    build: ./apps/orders
+    environment: &order-env
+      DELIVERY_PIN_KEY: ${DELIVERY_PIN_KEY:?Configure delivery PIN secret}
+      DRIVER_SERVICE_TOKEN: ${DRIVER_SERVICE_TOKEN:?Configure driver service token}
+      DRIVERS_URL: http://drivers:3004
+      DISPATCH_ORDER_TOKEN: ${DISPATCH_ORDER_TOKEN:?Configure dispatch service token}
+      KITCHEN_ACCEPT_MINUTES: ${KITCHEN_ACCEPT_MINUTES:-30}
+      APP_ENV: development
+      PAYMENTS_ORDER_TOKEN: ${PAYMENTS_ORDER_TOKEN:?Configure local payment service token}
+      TEST_ORDERS_ENABLED: 'true'
+      ORDERS_DATABASE_URL: postgresql://orders:local_orders_only@orders-db:5432/orders_development
+      IDENTITY_URL: http://identity:3000
+      RESTAURANTS_URL: http://restaurants:3001
+    depends_on:
+      orders-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://localhost:3002/orders-health').then(r=>process.exit(r.ok?0:1))"]
+      interval: 3s
+      retries: 10
+  orders-worker:
+    image: food-delivery-orders:dev
+    command: ["node","service.mjs","--worker"]
+    environment: *order-env
+    depends_on:
+      orders:
+        condition: service_healthy
+  gateway:
+    image: food-delivery-gateway:dev
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    depends_on:
+      drivers: {condition: service_healthy, restart: true}
+      payments: {condition: service_healthy, restart: true}
+      orders:
+        condition: service_healthy
+        restart: true
+      identity:
+        condition: service_healthy
+      restaurants:
+        condition: service_healthy
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:8025:8025"]
+volumes:
+  drivers-data:
+  payments-data:
+  orders-data:
+  menu-photos:
+  restaurant-database:
+
+
+
+
+
+

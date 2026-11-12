@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-from-gateway
+spec:
+  podSelector:
+    matchLabels: {app: identity}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: gateway}
+      ports: [{protocol: TCP, port: 3000}]
+    - from:
+        - podSelector:
+            matchLabels: {app: restaurants}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-database-private
+spec:
+  podSelector:
+    matchLabels: {app: identity-database}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [identity, identity-worker, identity-migrate]}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-private
+spec:
+  podSelector:
+    matchLabels: {app: mailpit}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: identity}
+      ports: [{protocol: TCP, port: 1025}]

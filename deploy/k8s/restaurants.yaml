@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: restaurant-database
+spec:
+  selector: {app: restaurant-database}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: restaurant-database
+spec:
+  serviceName: restaurant-database
+  replicas: 1
+  selector:
+    matchLabels: {app: restaurant-database}
+  template:
+    metadata:
+      labels: {app: restaurant-database}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17
+          env:
+            - {name: POSTGRES_USER, value: restaurants}
+            - {name: POSTGRES_DB, value: restaurants_development}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: restaurants-secrets, key: POSTGRES_PASSWORD}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, restaurants, -d, restaurants_development]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          volumeMounts:
+            - {name: database, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata:
+        name: database
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: restaurants
+spec:
+  selector: {app: restaurants}
+  ports: [{port: 3001, targetPort: 3001}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restaurants-migrate-day4
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: {app: restaurants-migrate}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: food-delivery-restaurants:dev
+          imagePullPolicy: IfNotPresent
+          command: [sh, -c, 'npm run migrate && node dist/init-database.js']
+          envFrom:
+            - configMapRef: {name: restaurants-config}
+            - secretRef: {name: restaurants-secrets}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: restaurants
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: restaurants}
+  template:
+    metadata:
+      labels: {app: restaurants}
+    spec:
+      containers:
+        - name: restaurants
+          image: food-delivery-restaurants:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 3001}]
+          envFrom:
+            - configMapRef: {name: restaurants-config}
+            - secretRef: {name: restaurants-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /restaurants-health/ready, port: 3001}
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: {path: /restaurants-health/live, port: 3001}
+            initialDelaySeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restaurants-from-gateway
+spec:
+  podSelector:
+    matchLabels: {app: restaurants}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: gateway}
+      ports: [{protocol: TCP, port: 3001}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restaurant-database-private
+spec:
+  podSelector:
+    matchLabels: {app: restaurant-database}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [restaurants, restaurants-migrate]}
+      ports: [{protocol: TCP, port: 5432}]

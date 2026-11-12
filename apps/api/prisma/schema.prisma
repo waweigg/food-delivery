@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+model EnvironmentIdentity {
+  id String @id
+  name String @unique
+}
+model OutboxEvent {
+  id String @id @default(uuid())
+  type String
+  payload Json
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  @@index([processedAt, createdAt])
+}
+
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  role String @default("CUSTOMER")
+  disabled Boolean @default(false)
+  sessions Session[]
+  accounts Account[]
+  memberships RestaurantMembership[]
+  driver DriverProfile?
+  @@map("user")
+}
+
+model Session {
+  id String @id
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+  @@map("verification")
+}
+
+model RateLimit {
+  id String @id
+  key String @unique
+  count Int
+  lastRequest BigInt
+  @@map("rateLimit")
+}
+
+model Restaurant {
+  id String @id @default(uuid())
+  name String
+  memberships RestaurantMembership[]
+}
+
+model RestaurantMembership {
+  userId String
+  restaurantId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  restaurant Restaurant @relation(fields:[restaurantId], references:[id], onDelete:Cascade)
+  @@id([userId, restaurantId])
+}
+
+model DriverProfile {
+  id String @id @default(uuid())
+  userId String @unique
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  approved Boolean @default(false)
+}
+
+model AuditEvent {
+  id String @id @default(uuid())
+  actorId String
+  action String
+  targetId String
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}

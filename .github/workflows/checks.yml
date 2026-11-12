@@ -1,0 +1,147 @@
+name: Foundation checks
+on: [push, pull_request]
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: food
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: food_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U food -d food_test" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://food:ci_only@localhost:5432/food_test
+      APP_ENV: test
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci-only-not-for-deployment-secret-at-least-32-characters
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npm run generate
+      - run: npm run build
+      - run: npm test
+      - run: npm run migrate
+      - run: node ../../scripts/init-database.cjs
+      - run: |
+          npm start &
+          for i in $(seq 1 20); do
+            if curl --fail http://localhost:3000/health/ready; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+  restaurants:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://unused:unused@localhost:5432/unused
+      RESTAURANT_DATABASE_URL: postgresql://unused:unused@localhost:5433/unused
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci && npm run generate && npm run build
+        working-directory: apps/api
+      - run: npm ci && npm run generate && npm run build && npm test
+        working-directory: apps/restaurants
+      - run: docker compose -f compose.yaml -f compose.services.yaml config --quiet
+        env:
+          BETTER_AUTH_SECRET: ci-validation-only-secret-at-least-32-characters
+          RESTAURANT_SERVICE_TOKEN: ci-validation-only-service-token-at-least-32-characters
+          MENU_S3_ACCESS_KEY: ci-validation-only
+          MENU_S3_SECRET_KEY: ci-validation-only-storage-secret
+          PAYMENTS_ORDER_TOKEN: ci-validation-only-payment-token-at-least-32-characters
+          PAYMENTS_WEBHOOK_SECRET: ci-validation-only-webhook-secret-at-least-32-characters
+          DISPATCH_ORDER_TOKEN: ci-validation-only-dispatch-token-at-least-32-characters
+          DRIVER_SERVICE_TOKEN: ci-validation-only-driver-token-at-least-32-characters
+          DELIVERY_PIN_KEY: ci-validation-only-delivery-pin-key-at-least-32-characters
+  drivers:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: drivers
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: drivers_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U drivers -d drivers_test" --health-interval 5s --health-retries 10
+    env:
+      DRIVERS_DATABASE_URL: postgresql://drivers:ci_only@localhost:5432/drivers_test
+    defaults:
+      run:
+        working-directory: apps/drivers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: node acceptance.mjs
+      - run: node dispatch-acceptance.mjs
+  orders:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: orders
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: orders_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U orders -d orders_test" --health-interval 5s --health-retries 10
+    env:
+      ORDERS_DATABASE_URL: postgresql://orders:ci_only@localhost:5432/orders_test
+      PAYMENTS_ORDER_TOKEN: ci-only-payment-token-at-least-32-characters
+      DISPATCH_ORDER_TOKEN: ci-only-dispatch-token-at-least-32-characters
+    defaults:
+      run:
+        working-directory: apps/orders
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: node acceptance.mjs
+  mobile:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+      - run: node scripts/bootstrap-mobile.cjs
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: dart run flutter_launcher_icons
+        working-directory: apps/mobile
+      - run: flutter analyze
+        working-directory: apps/mobile
+      - run: flutter test
+        working-directory: apps/mobile
+      - if: runner.os == 'Linux'
+        run: flutter build apk --debug
+        working-directory: apps/mobile
+      - if: runner.os == 'macOS'
+        run: flutter build ios --simulator --debug
+        env:
+          BYPASS_PERMISSION_LOCATION_ALWAYS: '1'
+        working-directory: apps/mobile

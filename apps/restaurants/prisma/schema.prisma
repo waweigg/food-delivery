@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+model ServiceIdentity {
+  id String @id
+  environment String
+  service String
+}
+model Restaurant {
+  id String @id @default(uuid())
+  name String
+  address String
+  latitude Float
+  longitude Float
+  timezone String
+  hours Json
+  active Boolean @default(true)
+  temporaryClosedUntil DateTime?
+  status ApprovalStatus @default(PENDING)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members RestaurantMember[]
+  approvals ApprovalEvent[]
+  menuVersion Int @default(1)
+  categories MenuCategory[]
+  items MenuItem[]
+  photos MenuPhoto[]
+  @@index([status, active, createdAt])
+}
+model MenuCategory {
+  id String @id @default(uuid())
+  restaurantId String
+  restaurant Restaurant @relation(fields:[restaurantId],references:[id],onDelete:Restrict)
+  name String
+  position Int
+  archivedAt DateTime?
+  items MenuItem[]
+  @@unique([id,restaurantId])
+  @@index([restaurantId,archivedAt,position])
+}
+model MenuItem {
+  id String @id @default(uuid())
+  restaurantId String
+  restaurant Restaurant @relation(fields:[restaurantId],references:[id],onDelete:Restrict)
+  categoryId String
+  category MenuCategory @relation(fields:[categoryId,restaurantId],references:[id,restaurantId],onDelete:Restrict)
+  name String
+  description String
+  priceMinor Int
+  currency String @default("INR")
+  available Boolean @default(true)
+  photoId String?
+  photo MenuPhoto? @relation(fields:[photoId,restaurantId],references:[id,restaurantId],onDelete:Restrict)
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([restaurantId,categoryId,archivedAt])
+}
+model MenuPhoto {
+  id String @id @default(uuid())
+  restaurantId String
+  restaurant Restaurant @relation(fields:[restaurantId],references:[id],onDelete:Restrict)
+  objectKey String @unique
+  bytes Int
+  createdAt DateTime @default(now())
+  items MenuItem[]
+  @@unique([id,restaurantId])
+}
+model RestaurantMember {
+  restaurantId String
+  userId String
+  restaurant Restaurant @relation(fields:[restaurantId],references:[id],onDelete:Cascade)
+  createdAt DateTime @default(now())
+  @@id([restaurantId,userId])
+  @@index([userId])
+}
+model ApprovalEvent {
+  id String @id @default(uuid())
+  restaurantId String
+  restaurant Restaurant @relation(fields:[restaurantId],references:[id],onDelete:Restrict)
+  actorId String
+  action String
+  reason String
+  version Int
+  createdAt DateTime @default(now())
+  @@index([restaurantId,createdAt])
+}

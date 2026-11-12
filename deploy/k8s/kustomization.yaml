@@ -1,0 +1,69 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: food-delivery-dev
+resources:
+  - namespace.yaml
+  - database.yaml
+  - identity.yaml
+  - gateway.yaml
+  - mailpit.yaml
+  - network.yaml
+  - restaurants.yaml
+  - orders.yaml
+  - payments.yaml
+  - drivers.yaml
+  - menu-storage.yaml
+configMapGenerator:
+  - name: drivers-config
+    literals:
+      - DISPATCH_ENABLED=true
+      - ORDERS_URL=http://orders:3002
+      - RESTAURANTS_URL=http://restaurants:3001
+      - DISPATCH_RADIUS_METRES=5000
+      - DISPATCH_OFFER_SECONDS=45
+      - DISPATCH_MAX_ATTEMPTS=5
+      - DISPATCH_LIMIT_SECONDS=300
+      - APP_ENV=development
+      - IDENTITY_URL=http://identity:3000
+      - DRIVER_STALE_SECONDS=60
+      - DRIVER_RETENTION_SECONDS=900
+  - name: payments-config
+    literals:
+      - APP_ENV=development
+      - PAYMENT_PROVIDER=local-test
+      - IDENTITY_URL=http://identity:3000
+      - ORDERS_URL=http://orders:3002
+  - name: orders-config
+    literals:
+      - DRIVERS_URL=http://drivers:3004
+      - APP_ENV=development
+      - TEST_ORDERS_ENABLED=true
+      - KITCHEN_ACCEPT_MINUTES=30
+      - IDENTITY_URL=http://identity:3000
+      - RESTAURANTS_URL=http://restaurants:3001
+  - name: restaurants-config
+    literals:
+      - APP_ENV=development
+      - PORT=3001
+      - IDENTITY_URL=http://identity:3000
+      - MENU_CURRENCY=INR
+      - DELIVERY_RADIUS_METRES=5000
+      - DELIVERY_FEE_MINOR=3000
+      - OTHER_CHARGES_MINOR=0
+      - MENU_S3_ENDPOINT=http://object-storage:8333
+      - MENU_S3_REGION=us-east-1
+      - MENU_S3_BUCKET=menu-photos
+  - name: identity-config
+    literals:
+      - APP_ENV=development
+      - BETTER_AUTH_URL=http://localhost:8080
+      - SMTP_URL=smtp://mailpit:1025
+      - MAIL_FROM=development@example.test
+      - TRUST_GATEWAY=true
+  - name: gateway-config
+    files:
+      - nginx.conf=gateway.conf
+
+
+
+

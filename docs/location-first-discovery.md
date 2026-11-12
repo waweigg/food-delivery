@@ -1,0 +1,9 @@
+# Location-first customer discovery
+
+The customer Explore and Saved tabs require an explicitly selected delivery location. No city is inferred from login, IP address or device settings. Use my current location requests a one-time accurate GPS reading after permission, or enter coordinates manually. The debug app offers the clearly labelled Malappuram demo location. Place-name search/maps require a future geocoding integration; no external location lookup is performed here.
+
+The restaurant microservice owns POST /catalog/coverage. Coordinates are validated, approved active restaurants are filtered by the existing DELIVERY_RADIUS_METRES policy (5 km locally) before pagination, and results are sorted by distance then ID. Closed nearby restaurants remain labelled as closed: supported-but-closed differs from outside coverage. A network failure is a retry state, never a claim that an area is unsupported. Coordinates travel in the request body rather than URL query parameters. They are not persisted by this endpoint.
+
+Changing location clears the previous results immediately and invalidates in-flight responses. Customer dashboard Browse restaurants returns to this same discovery flow. Location/address state remains session-only. The basket is preserved, but the checkout service rechecks the new address, coverage, current menu and fees; missing street/contact details must be completed before review. No automatic GPS requests, background customer tracking, production geocoding provider or new delivery fee policy was added.
+
+Verification: restaurant SQL coverage tests cover validation, zero coordinates, the 5 km boundary, approval/active status, closed hours and filter-before-pagination. Existing restaurant regression tests and mobile location-selection, unsupported-area, failed-request and stale-response tests run with the implementation. Runtime verification is recorded in progress.md.

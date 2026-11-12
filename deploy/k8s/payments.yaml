@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-db
+spec:
+  selector: {app: payments-db}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: payments-db
+spec:
+  serviceName: payments-db
+  replicas: 1
+  selector:
+    matchLabels: {app: payments-db}
+  template:
+    metadata:
+      labels: {app: payments-db}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17
+          env:
+            - {name: POSTGRES_USER, value: payments}
+            - {name: POSTGRES_DB, value: payments_development}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: payments-secrets, key: POSTGRES_PASSWORD}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, payments, -d, payments_development]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          volumeMounts:
+            - {name: database, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata:
+        name: database
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+spec:
+  selector: {app: payments}
+  ports: [{port: 3003, targetPort: 3003}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payments}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: payments}}
+  template:
+    metadata: {labels: {app: payments}}
+    spec:
+      containers:
+        - name: payments
+          image: food-delivery-payments:dev
+          envFrom:
+            - configMapRef: {name: payments-config}
+            - secretRef: {name: payments-secrets}
+          readinessProbe: {httpGet: {path: /health, port: 3003}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: payments-ingress}
+spec:
+  podSelector: {matchLabels: {app: payments}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: gateway}}}]
+      ports: [{port: 3003}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: payments-db-ingress}
+spec:
+  podSelector: {matchLabels: {app: payments-db}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: payments}}}]
+      ports: [{port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: payments-to-orders}
+spec:
+  podSelector: {matchLabels: {app: orders}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: payments}}}]
+      ports: [{port: 3002}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: payments-to-identity}
+spec:
+  podSelector: {matchLabels: {app: identity}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: payments}}}]
+      ports: [{port: 3000}]
