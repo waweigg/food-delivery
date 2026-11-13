@@ -8,7 +8,15 @@ export class LocalProvider {
   async initialize(){
     await this.pool.query(`CREATE TABLE IF NOT EXISTS sandbox_ledger(
       reference uuid PRIMARY KEY, attempt uuid NOT NULL UNIQUE, amount bigint NOT NULL, currency text NOT NULL,
-      state text NOT NULL DEFAULT 'PENDING', expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes')`);
+      state text NOT NULL DEFAULT 'PENDING', expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes',
+      refunded_amount bigint NOT NULL DEFAULT 0 CHECK(refunded_amount>=0), created_at timestamptz NOT NULL DEFAULT now())`);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS sandbox_refunds(
+      id uuid PRIMARY KEY, reference uuid NOT NULL REFERENCES sandbox_ledger(reference),
+      idempotency_key uuid NOT NULL UNIQUE, amount bigint NOT NULL CHECK(amount>0),
+      state text NOT NULL DEFAULT 'SUCCEEDED', created_at timestamptz NOT NULL DEFAULT now())`);
+    await this.pool.query('ALTER TABLE sandbox_ledger ADD COLUMN IF NOT EXISTS refunded_amount bigint NOT NULL DEFAULT 0');
+    await this.pool.query('ALTER TABLE sandbox_ledger ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()');
+    await this.pool.query('UPDATE sandbox_ledger s SET created_at=a.created_at FROM attempts a WHERE a.reference=s.reference::text');
   }
   async create(a){
     const r=await this.pool.query('INSERT INTO sandbox_ledger(reference,attempt,amount,currency) VALUES($1,$2,$3,$4) ON CONFLICT(attempt) DO UPDATE SET attempt=excluded.attempt RETURNING reference',[randomUUID(),a.id,a.amount,a.currency]);
@@ -24,6 +32,20 @@ export class LocalProvider {
     await this.pool.query("UPDATE sandbox_ledger SET state=$2 WHERE reference=$1 AND state='PENDING'",[ref,outcomes.get(token)]);
     return {eventId:randomUUID(),reference:ref};
   }
+  async refund(ref,amount,idempotencyKey){
+    const c=await this.pool.connect();
+    try{
+      await c.query('BEGIN');
+      const prior=await c.query('SELECT * FROM sandbox_refunds WHERE idempotency_key=$1',[idempotencyKey]);
+      if(prior.rowCount){await c.query('COMMIT');return prior.rows[0];}
+      const row=(await c.query('SELECT * FROM sandbox_ledger WHERE reference=$1 FOR UPDATE',[ref])).rows[0];
+        if(!row||row.state!=='SUCCEEDED'||Number(row.refunded_amount)!==0||Number(row.amount)!==Number(amount))
+          throw Object.assign(new Error('Simulator refund cannot be confirmed'),{status:409});
+      const result=(await c.query("INSERT INTO sandbox_refunds(id,reference,idempotency_key,amount) VALUES($1,$2,$3,$4) RETURNING *",[idempotencyKey,ref,idempotencyKey,amount])).rows[0];
+      await c.query("UPDATE sandbox_ledger SET state='REFUNDED',refunded_amount=$2 WHERE reference=$1",[ref,amount]);
+      await c.query('COMMIT');return result;
+    }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+  }
   signature(time,raw){return createHmac('sha256',this.key).update(time+'.').update(raw).digest('hex');}
   verify(time,raw,sig){
     if(!/^\d{10}$/.test(time??'')||Math.abs(Date.now()/1000-Number(time))>300||!/^[0-9a-f]{64}$/.test(sig??''))return false;
@@ -38,8 +60,8 @@ export class StripeTestProvider {
     this.secret=secret;this.key=webhookSecret;this.returnUrl=returnUrl;
   }
   async initialize(){}
-  async api(path,params,key){
-    const r=await fetch('https://api.stripe.com/v1/checkout/sessions'+path,{
+  async api(path,params,key,resource='checkout/sessions'){
+    const r=await fetch('https://api.stripe.com/v1/'+resource+path,{
       method:params?'POST':'GET',headers:{authorization:'Bearer '+this.secret,...(key?{'Idempotency-Key':key}:{})},
       body:params,redirect:'error',signal:AbortSignal.timeout(8000)});
     if(!r.ok)throw new Error('Stripe test provider unavailable');
@@ -60,6 +82,15 @@ export class StripeTestProvider {
     const s=await this.api('/'+ref);
     return {attempt:s.metadata?.attempt,amount:String(s.amount_total),currency:s.currency?.toUpperCase(),
       state:s.payment_status==='paid'?'SUCCEEDED':s.status==='expired'?'ABANDONED':'PENDING',url:s.url};
+  }
+  async refund(ref,amount,idempotencyKey){
+    const session=await this.api('/'+ref+'?expand[]=payment_intent',undefined,undefined);
+    if(!session.payment_intent||session.livemode!==false||Number(session.amount_total)!==Number(amount)||session.payment_status!=='paid')
+      throw Object.assign(new Error('Stripe test payment is not refundable'),{status:409});
+    const params=new URLSearchParams({payment_intent:typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent.id,amount:String(amount),reason:'requested_by_customer'});
+    const result=await this.api('',params,idempotencyKey,'refunds');
+    if(result.status!=='succeeded'&&result.status!=='pending')throw Object.assign(new Error('Stripe test refund was not accepted'),{status:409});
+    return result;
   }
   verifyEvent(headers,raw){
     const parts=(headers['stripe-signature']??'').split(',');

@@ -43,6 +43,9 @@ try{
   assert.equal((await confirm(c.id,'test_decline')).status,'SUCCEEDED');
   assert.equal((await start()).id,c.id);
   assert.equal((await asJson(await send('/orders/'+o.id,undefined,owner))).payment_state,'PAID');
+  assert.equal((await send('/admin/payments',undefined,owner)).status,403,'customers cannot access finance administration');
+  const captureJournal=await db.query("SELECT account,amount FROM ledger_entries WHERE journal_id=$1 ORDER BY account",[c.id]);
+  assert.equal(captureJournal.rowCount,2);assert.equal(captureJournal.rows.reduce((n,r)=>n+Number(r.amount),0),0,'capture journal balances');
   const recovery=await order();
   const d=await asJson(await send('/payments',{orderId:recovery.id},owner));
   await db.query("UPDATE sandbox_ledger SET state='SUCCEEDED' WHERE reference=$1",[d.reference]);

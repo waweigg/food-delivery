@@ -27,12 +27,12 @@ BEGIN
     RAISE EXCEPTION 'order snapshot is immutable';
   END IF;
   IF NEW.order_state <> OLD.order_state AND NOT
-    (OLD.order_state='PLACED' AND NEW.order_state='CANCELLED' AND OLD.payment_state='UNPAID' AND OLD.delivery_state='UNASSIGNED') THEN
+    (OLD.order_state='PLACED' AND NEW.order_state='CANCELLED' AND OLD.payment_state IN ('UNPAID','REFUNDED') AND OLD.delivery_state IN ('UNASSIGNED','FAILED')) THEN
     RAISE EXCEPTION 'invalid order transition';
   END IF;
   IF NEW.payment_state <> OLD.payment_state AND NOT
     ((OLD.payment_state='UNPAID' AND NEW.payment_state='PAID' AND NEW.order_state='PLACED') OR
-     (OLD.payment_state='PAID' AND NEW.payment_state='REFUNDED' AND NEW.delivery_state='UNASSIGNED')) THEN
+     (OLD.payment_state='PAID' AND NEW.payment_state='REFUNDED' AND NEW.delivery_state NOT IN ('ASSIGNED','PICKED_UP'))) THEN
     RAISE EXCEPTION 'invalid payment transition';
   END IF;
   IF NEW.delivery_state <> OLD.delivery_state AND NOT
@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS order_payment_reservations (
  status text NOT NULL CHECK(status IN ('OPEN','SUCCEEDED','FAILED','ABANDONED'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_payment_per_order ON order_payment_reservations(order_id) WHERE status='OPEN';
+CREATE TABLE IF NOT EXISTS order_payment_refunds (
+ refund_id uuid PRIMARY KEY, attempt_id uuid NOT NULL UNIQUE, order_id uuid NOT NULL REFERENCES orders(id),
+ amount bigint NOT NULL CHECK(amount>0), status text NOT NULL CHECK(status IN ('OPEN','SUCCEEDED')),
+ created_at timestamptz NOT NULL DEFAULT now(), completed_at timestamptz
+);
 
 CREATE TABLE IF NOT EXISTS kitchen_tickets (
  order_id uuid PRIMARY KEY REFERENCES orders(id),

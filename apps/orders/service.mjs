@@ -1,4 +1,5 @@
 import {customerDelivery,adminDelivery} from './delivery.mjs';
+import {adminOrders} from './admin-orders.mjs';
 import {dispatchRoute} from './dispatch.mjs';
 import {enqueueKitchen,expireBatch,kitchenRoute} from './kitchen.mjs';
 import http from 'node:http';
@@ -92,12 +93,41 @@ async function paymentUpdate(req,orderId,action){
     return {ok:true};
   });
 }
+async function refundUpdate(req,orderId,action){
+  const key=process.env.PAYMENTS_ORDER_TOKEN,supplied=Buffer.from(req.headers.authorization??''),expected=Buffer.from('Bearer '+key);
+  if(!key||key.length<32||supplied.length!==expected.length||!timingSafeEqual(expected,supplied))fail(403,'Service authentication required');
+  const b=await body(req);if(!uuid.test(b.attempt)||!uuid.test(b.refundId))fail(400,'Invalid refund reference');
+  return transaction(async c=>{
+    const o=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];if(!o)fail(404,'Order unavailable');
+    if(Number(b.amount)!==Number(o.quote.totalMinor)||b.currency!==o.quote.currency)fail(409,'Refund amount mismatch');
+    const pay=(await c.query("SELECT status FROM order_payment_reservations WHERE order_id=$1 AND attempt_id=$2",[orderId,b.attempt])).rows[0];
+    if(!pay||pay.status!=='SUCCEEDED')fail(409,'Captured payment not found');
+    const old=(await c.query('SELECT * FROM order_payment_refunds WHERE attempt_id=$1 FOR UPDATE',[b.attempt])).rows[0];
+    if(action==='reserve'){
+      if(old){if(old.refund_id===b.refundId&&old.order_id===orderId)return {ok:true};fail(409,'A refund is already recorded for this payment');}
+      if(o.payment_state!=='PAID'||['ASSIGNED','PICKED_UP'].includes(o.delivery_state))fail(409,'Resolve delivery before refund');
+      const kitchen=(await c.query('SELECT state FROM kitchen_tickets WHERE order_id=$1',[orderId])).rows[0];
+      if(!['REJECTED','EXPIRED'].includes(kitchen?.state)&&o.delivery_state!=='FAILED')fail(409,'Refund requires a rejected or expired restaurant ticket, or a failed delivery');
+      await c.query("INSERT INTO order_payment_refunds(refund_id,attempt_id,order_id,amount,status) VALUES($1,$2,$3,$4,'OPEN')",[b.refundId,b.attempt,orderId,b.amount]);return {ok:true};
+    }
+    if(!old||old.refund_id!==b.refundId||old.order_id!==orderId)fail(409,'Refund reservation not found');
+    if(old.status==='SUCCEEDED')return {ok:true};
+    if(o.payment_state!=='PAID')fail(409,'Order payment is not refundable');
+    await c.query("UPDATE orders SET payment_state='REFUNDED' WHERE id=$1",[orderId]);
+    await c.query("UPDATE order_payment_refunds SET status='SUCCEEDED',completed_at=now() WHERE refund_id=$1",[b.refundId]);
+    await c.query("UPDATE payment_recovery SET status='REFUNDED' WHERE order_id=$1",[orderId]);
+    await event(c,orderId,'PAYMENT_REFUNDED',b.refundId);return {ok:true};
+  });
+}
 async function route(req){
   const path=new URL(req.url,'http://orders').pathname;
   if(path==='/orders-health'){await pool.query('SELECT 1');return {ok:true};}
   if(path.startsWith('/internal/dispatch/'))return dispatchRoute({req,path,pool,transaction,event,body});
   const payment=path.match(/^\/internal\/orders\/([^/]+)\/payment\/(reserve|settle)$/);
   if(payment && req.method==='POST')return paymentUpdate(req,payment[1],payment[2]);
+  const refund=path.match(/^\/internal\/orders\/([^/]+)\/payment\/refund\/(reserve|settle)$/);
+  if(refund&&req.method==='POST')return refundUpdate(req,refund[1],refund[2]);
+  if(path.startsWith('/orders/admin'))return adminOrders({req,path,pool,transaction,event,body});
   if(path.startsWith('/orders/kitchen'))return kitchenRoute({req,path,pool,transaction,event,body});
   if(path.startsWith('/orders/delivery-admin'))return adminDelivery({req,path,pool,transaction,event,body});
   const owner=await customer(req);

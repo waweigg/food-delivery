@@ -28,6 +28,15 @@ async function tx(fn){
   catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
 }
 function view(a){return {id:a.id,orderId:a.order_id,provider:a.provider,reference:a.reference,amountMinor:Number(a.amount),currency:a.currency,status:a.status,synchronized:a.synchronized};}
+async function ledgerCapture(c,a){
+  const journal=a.id;
+  await c.query("INSERT INTO ledger_entries(id,journal_id,order_id,attempt_id,account,amount,currency) VALUES($1,$2,$3,$4,'PROCESSOR_CLEARING',$5,$6),($7,$2,$3,$4,'CUSTOMER_FUNDS_HELD',$8,$6) ON CONFLICT DO NOTHING",
+    [randomUUID(),journal,a.order_id,a.id,a.amount,a.currency,randomUUID(),-Number(a.amount)]);
+}
+async function ledgerRefund(c,r,a){
+  await c.query("INSERT INTO ledger_entries(id,journal_id,order_id,attempt_id,refund_id,account,amount,currency) VALUES($1,$2,$3,$4,$5,'PROCESSOR_CLEARING',$6,$7),($8,$2,$3,$4,$5,'CUSTOMER_FUNDS_HELD',$9,$7) ON CONFLICT DO NOTHING",
+    [randomUUID(),r.journal_id,a.order_id,a.id,r.id,-Number(r.amount),a.currency,randomUUID(),Number(r.amount)]);
+}
 // Persist each cross-service checkpoint. Both remote operations are idempotent,
 // including recovery after a successful remote commit but a lost local response.
 async function reconcile(id){
@@ -52,9 +61,79 @@ async function reconcile(id){
       a.status=record.state;
       await updateOrder(a,'settle');
       a=(await c.query('UPDATE attempts SET status=$2,synchronized=true WHERE id=$1 RETURNING *',[id,a.status])).rows[0];
+      if(a.status==='SUCCEEDED')await ledgerCapture(c,a);
     }
     return {...view(a),checkoutUrl:record.state==='PENDING'?record.url:null};
   });
+}
+async function administrator(req){
+  const auth=req.headers.authorization;if(!auth?.startsWith('Bearer '))fail(401,'Sign in required');
+  const person=await remote(env.IDENTITY_URL+'/me',auth);
+  if(person.role!=='ADMIN')fail(403,'Admin required');return person;
+}
+async function refundAttempt(id,adminId,reason){
+  const prior=(await pool.query('SELECT * FROM refunds WHERE attempt_id=$1',[id])).rows[0];if(prior)return prior;
+  const a=(await pool.query('SELECT * FROM attempts WHERE id=$1',[id])).rows[0];
+  if(!a||a.status!=='SUCCEEDED'||!a.synchronized)fail(409,'Only a captured payment can be refunded');
+  if(a.provider!==provider.name)fail(409,'Restore the original payment provider before refunding');
+  const refundId=a.id;
+  await remote(env.ORDERS_URL+'/internal/orders/'+a.order_id+'/payment/refund/reserve','Bearer '+env.PAYMENTS_ORDER_TOKEN,
+    {attempt:a.id,refundId,amount:Number(a.amount),currency:a.currency});
+  try{
+    return (await pool.query("INSERT INTO refunds(id,attempt_id,amount,reason,admin_id,status) VALUES($1,$2,$3,$4,$5,'PENDING') ON CONFLICT(attempt_id) DO UPDATE SET attempt_id=excluded.attempt_id RETURNING *",
+      [refundId,a.id,a.amount,reason,adminId])).rows[0];
+  }catch(e){throw e;}
+}
+async function processRefund(r){
+  const a=(await pool.query('SELECT * FROM attempts WHERE id=$1',[r.attempt_id])).rows[0];if(!a)throw Error('Payment unavailable');
+  const providerRefund=await provider.refund(a.reference,Number(r.amount),r.id);
+  if(providerRefund.status&&providerRefund.status.toUpperCase()!=='SUCCEEDED')throw Object.assign(new Error('Provider refund is not confirmed'),{status:503});
+  await remote(env.ORDERS_URL+'/internal/orders/'+a.order_id+'/payment/refund/settle','Bearer '+env.PAYMENTS_ORDER_TOKEN,
+    {attempt:a.id,refundId:r.id,amount:Number(r.amount),currency:a.currency});
+  await tx(async c=>{
+    const current=(await c.query('SELECT * FROM refunds WHERE id=$1 FOR UPDATE',[r.id])).rows[0];
+    if(current.status==='SUCCEEDED')return;
+    const done=(await c.query("UPDATE refunds SET status='SUCCEEDED',provider_reference=$2,last_error=NULL,updated_at=now() WHERE id=$1 RETURNING *",[r.id,providerRefund.id??null])).rows[0];
+    await ledgerRefund(c,done,a);
+  });
+}
+async function adminRoute(req,path){
+  const admin=await administrator(req);
+  if(path==='/admin/payments'&&req.method==='GET'){
+    const q=(new URL(req.url,'http://local').searchParams.get('q')??'').trim().slice(0,100);
+    return (await pool.query(`SELECT a.id,a.order_id,a.provider,a.reference,a.amount,a.currency,a.status,a.created_at,
+      r.id AS refund_id,r.status AS refund_status,r.reason AS refund_reason,r.last_error AS refund_error,r.created_at AS refund_created_at
+      FROM attempts a LEFT JOIN refunds r ON r.attempt_id=a.id
+      WHERE $1='' OR a.id::text ILIKE $2 OR a.order_id::text ILIKE $2 ORDER BY a.created_at DESC LIMIT 200`,[q,'%'+q+'%'])).rows;
+  }
+  if(path==='/admin/ledger'&&req.method==='GET'){
+    const rows=(await pool.query('SELECT id,journal_id,order_id,attempt_id,refund_id,account,amount,currency,created_at FROM ledger_entries ORDER BY created_at DESC,id DESC LIMIT 2000')).rows;
+    const total=Number((await pool.query('SELECT COALESCE(sum(amount),0) AS total FROM ledger_entries')).rows[0].total);
+    return {entries:rows,balanced:total===0,settlementReady:false,settlementNote:'Commission, driver earnings, funds recipient and payout schedule have not been configured. No earnings are marked payable or paid.'};
+  }
+  if(path==='/admin/reconciliation'&&req.method==='GET'){
+    if(provider.name!=='local-test')fail(409,'Automated provider comparison is available only for the local simulator');
+    const day=(new URL(req.url,'http://local').searchParams.get('day')??new Date().toISOString().slice(0,10));
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||Number.isNaN(Date.parse(day+'T00:00:00Z')))fail(400,'Use a UTC date in YYYY-MM-DD format');
+    const start=day+'T00:00:00Z',end=new Date(Date.parse(start)+86400000).toISOString();
+    const sum=async(sql,p)=>Number((await pool.query(sql,p)).rows[0]?.amount??0);
+    const [captured,refunded,ledgerCaptureTotal,ledgerRefundTotal,providerCapture,providerRefund]=await Promise.all([
+      sum("SELECT COALESCE(sum(amount),0) amount FROM attempts WHERE status='SUCCEEDED' AND created_at>=$1 AND created_at<$2",[start,end]),
+      sum("SELECT COALESCE(sum(amount),0) amount FROM refunds WHERE status='SUCCEEDED' AND updated_at>=$1 AND updated_at<$2",[start,end]),
+      sum("SELECT COALESCE(sum(amount),0) amount FROM ledger_entries WHERE refund_id IS NULL AND account='PROCESSOR_CLEARING' AND amount>0 AND created_at>=$1 AND created_at<$2",[start,end]),
+      sum("SELECT COALESCE(-sum(amount),0) amount FROM ledger_entries WHERE refund_id IS NOT NULL AND account='PROCESSOR_CLEARING' AND amount<0 AND created_at>=$1 AND created_at<$2",[start,end]),
+      sum("SELECT COALESCE(sum(amount),0) amount FROM sandbox_ledger WHERE state IN ('SUCCEEDED','REFUNDED') AND created_at>=$1 AND created_at<$2",[start,end]),
+      sum("SELECT COALESCE(sum(amount),0) amount FROM sandbox_refunds WHERE state='SUCCEEDED' AND created_at>=$1 AND created_at<$2",[start,end])
+    ]);
+    return {day,currency:'INR',provider:'local-test',captured,refunded,ledgerCaptured:ledgerCaptureTotal,ledgerRefunded:ledgerRefundTotal,providerCaptured:providerCapture,providerRefunded:providerRefund,
+      differences:{paymentsVsLedgerCapture:captured-ledgerCaptureTotal,paymentsVsProviderCapture:captured-providerCapture,refundsVsLedger:refunded-ledgerRefundTotal,refundsVsProvider:refunded-providerRefund},settlementReady:false};
+  }
+  const match=path.match(/^\/admin\/payments\/([a-f0-9-]{36})\/refund$/);
+  if(match&&req.method==='POST'){
+    const b=parse(await rawBody(req));if(typeof b.reason!=='string'||b.reason.trim().length<10||b.reason.length>500)fail(400,'A support reason (10–500 characters) is required');
+    const r=await refundAttempt(match[1],admin.id,b.reason.trim());return {id:r.id,attemptId:r.attempt_id,amountMinor:Number(r.amount),currency:'INR',status:r.status,reason:r.reason};
+  }
+  fail(404,'Unknown admin payment route');
 }
 async function webhook(raw,headers){
   let event;
@@ -81,6 +160,7 @@ async function route(req){
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/health'){await pool.query('SELECT 1');return {ok:true};}
   if(path==='/payments/webhook'&&req.method==='POST')return webhook(await rawBody(req),req.headers);
+  if(path.startsWith('/admin/'))return adminRoute(req,path);
   const auth=req.headers.authorization;
   if(!auth?.startsWith('Bearer '))fail(401,'Sign in first');
   const owner=await remote(env.IDENTITY_URL+'/me',auth);
@@ -125,6 +205,8 @@ http.createServer(async(req,res)=>{
 async function sweep(){
   try{const rows=await pool.query('SELECT id FROM attempts WHERE NOT synchronized ORDER BY last_checked NULLS FIRST LIMIT 50');
     for(const a of rows.rows){try{await reconcile(a.id);}catch{console.error('Payment reconciliation deferred');}finally{await pool.query('UPDATE attempts SET last_checked=now() WHERE id=$1',[a.id]);}}
+    const refunds=await pool.query("SELECT * FROM refunds WHERE status='PENDING' ORDER BY created_at LIMIT 20");
+    for(const r of refunds.rows){try{await processRefund(r);}catch(e){await pool.query("UPDATE refunds SET last_error=$2,updated_at=now() WHERE id=$1 AND status='PENDING'",[r.id,e.status===409?'Provider or order is not eligible for this refund':'Refund processing deferred; automatic retry is scheduled']);}}
   }catch{console.error('Payment sweep deferred');}
   setTimeout(sweep,10000).unref();
 }
