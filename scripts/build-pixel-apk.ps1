@@ -46,8 +46,9 @@ try {
     $sdk = $env:ANDROID_HOME
     if (!$sdk) { $sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
     $ndks = (Get-ChildItem (Join-Path $sdk 'ndk') -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'source.properties') }).Name -join ','
-    $gradleMode = if (!$Online) { @('--offline') } else { @() }
-    $target = if ($PhysicalAndroid) { 'android-arm,android-arm64' } else { 'android-x64' }
+    $gradleMode = @()
+    if (!$Online) { $gradleMode += '--offline' }
+    $target = if ($PhysicalAndroid) { 'android-arm64' } else { 'android-x64' }
     & ./android/gradlew.bat -p android @gradleMode --no-problems-report :app:assembleDebug "-Ptarget-platform=$target" "-Pflutter.androidSdkRoot=$sdk" "-Pflutter.installedNdkVersions=$ndks" "-Pdart-defines=$apiDefine"
     if ($LASTEXITCODE -ne 0) { throw "Android build failed in $app" }
     $output = Join-Path $mobile 'build/app/outputs/flutter-apk'
