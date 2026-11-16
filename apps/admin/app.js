@@ -1,7 +1,7 @@
 'use strict';
 let token='',section='Overview';
 const $=s=>document.querySelector(s),content=$('#content'),message=$('#message');
-const sections=['Overview','Restaurants','Drivers','Dispatch','Deliveries','Orders','Payments','Users'];
+const sections=['Overview','Pilot','Restaurants','Drivers','Dispatch','Deliveries','Orders','Payments','Settlements','Users'];
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n;}
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',credentials:'omit',headers:{'content-type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(12000)});if(r.status===401){token='';$('#workspace').hidden=true;$('#login').hidden=false;throw Error('Session expired. Sign in again.');}const data=await r.json();if(!r.ok)throw Error(typeof data.message==='string'?data.message:'Request failed. Refresh and try again.');return data;}
 function button(label,action){const b=el('button',label,'secondary');b.type='button';b.onclick=async()=>{b.disabled=true;try{await action();}catch(e){message.textContent=e.message;message.className='error';}finally{b.disabled=false;}};return b;}
@@ -20,6 +20,57 @@ async function load(){
   const stats=el('div',null,'stats');for(const [name,n] of [['Restaurants',r.length],['Approved drivers',d.filter(x=>x.status==='APPROVED').length],['Dispatch alerts',j.filter(x=>x.issue).length],['Payment reviews',p.length]]){const c=el('div',null,'stat');c.append(el('strong',n),el('span',name));stats.append(c);}
   const panel=el('div',null,'panel');panel.append(el('h2','A taste of Malappuram'),el('p','Three sample restaurants, Kerala dishes and test prices. Customers order in the app; restaurant teams prepare orders and drivers accept pickup offers.'),el('p','Local policy: 5 km coverage, ₹30 delivery, no other charges. Payments are simulated.'));
   content.replaceChildren(stats,panel);return;
+ }
+ if(section==='Pilot'){
+  const path='/orders/admin/pilot';
+  const {control,orders}=await api(path);
+  const enabled=control.window_id && Date.parse(control.server_time)>=Date.parse(control.opens_at)
+    && Date.parse(control.server_time)<Date.parse(control.closes_at);
+  const status=control.paused?'Paused':!control.window_id?'Development ordering':
+    !enabled?'Outside staffed hours':control.admitted>=control.order_cap?'Order cap reached':'Accepting pilot orders';
+  const change=async(action,settings={})=>{
+    const reason=prompt('Reason for this change (at least 10 characters)');
+    if(reason?.trim())await mutate(path,{action,reason:reason.trim(),version:control.version,...settings});
+  };
+  const configure=button('Configure pilot window',async()=>{
+    const restaurants=prompt('Approved restaurant IDs, separated by commas',control.restaurants?.join(',')||'mlp-demo-malabar');
+    if(restaurants===null)return;
+    const opensAt=prompt('Staffed opening time in UTC',new Date().toISOString());
+    if(opensAt===null)return;
+    const closesAt=prompt('Staffed closing time in UTC',new Date(Date.now()+3600000).toISOString());
+    if(closesAt===null)return;
+    const cap=prompt('Maximum new orders for this window (1–100)','2');
+    if(cap===null)return;
+    await change('configure',{restaurants:restaurants.split(',').map(id=>id.trim()),opensAt,closesAt,cap:Number(cap)});
+  });
+  configure.disabled=!control.paused;
+  const panel=el('section',null,'panel pilot-panel');
+  panel.append(el('h2',status),el('p','Pausing checkout leaves existing orders open for fulfillment and support.'));
+  if(control.window_id){
+    const details=el('dl',null,'pilot-details');
+    const formatUtc=value=>new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'});
+    for(const [term,value] of [
+      ['Staffed window (UTC)',`${formatUtc(control.opens_at)} – ${formatUtc(control.closes_at)}`],
+      ['Orders admitted',`${control.admitted} of ${control.order_cap}`],
+      ['Restaurant IDs',control.restaurants.join(', ')],
+    ]){
+      const detail=el('div');
+      detail.append(el('dt',term),el('dd',value));
+      details.append(detail);
+    }
+    panel.append(details);
+  }
+  const toggle=button(control.paused?'Resume new orders':'Pause new orders',()=>change(control.paused?'resume':'pause'));
+  toggle.classList.remove('secondary');
+  panel.append(actions(toggle,configure));
+  const admitted=table(['Order','Restaurant','Payment','Kitchen','Dispatch','Delivery'],orders.map(o=>[
+    o.id,o.restaurant_id,o.payment_state,o.kitchen_state,o.dispatch_state,o.delivery_state,
+  ]));
+  admitted.tabIndex=0;
+  admitted.setAttribute('role','region');
+  admitted.setAttribute('aria-label','Admitted orders');
+  content.replaceChildren(panel,el('h2','Admitted orders','section-heading'),
+    orders.length?admitted:el('p','No orders admitted in this window.','panel'));return;
  }
  if(section==='Restaurants'){
   const rows=await api('/admin/restaurants');content.replaceChildren(table(['Restaurant','Status','Review'],rows.map(r=>[label(r.name,r.address),pill(r.status),actions(...['APPROVED','SUSPENDED'].map(s=>button(s==='APPROVED'?'Approve':'Suspend',async()=>{const reason=prompt('Reason for this decision');if(reason?.trim())await mutate('/admin/restaurants/'+encodeURIComponent(r.id)+'/decision',{status:s,reason:reason.trim(),version:r.version});})))])));return;
@@ -42,6 +93,18 @@ async function load(){
    actions(button('View',async()=>{const d=await api('/orders/admin/'+o.id),box=el('div');box.append(el('p',`Customer: ${d.customer_id}\nRestaurant: ${d.restaurant_id}\nStatus: ${d.order_state} · ${d.payment_state} · ${d.delivery_state}\nDelivery: ${d.address.street} · ${d.address.phone}\nKitchen: ${d.kitchen_state||'—'} · Driver: ${d.driver_id||'—'}\nTotal: ₹${(Number(d.quote.totalMinor)/100).toFixed(2)}`));for(const event of d.events)box.append(el('p',`${event.kind} · ${event.actor} · ${new Date(event.created_at).toLocaleString()}`));if(d.order_state==='PLACED'&&['UNPAID','REFUNDED'].includes(d.payment_state)&&['UNASSIGNED','FAILED'].includes(d.delivery_state))box.append(button('Cancel order',async()=>{const reason=prompt('Support reason (at least 10 characters)');if(reason?.trim()){await mutate('/orders/admin/'+o.id+'/cancel',{reason:reason.trim()});$('#details').close();}}));dialog('Order details',box);} ))
   ])));};
   content.replaceChildren(top);await draw();return;
+ }
+ if(section==='Settlements'){
+ const data=await api('/admin/payments/settlements');
+ const add=button('Allocate completed test order',async()=>{
+ const id=prompt('Captured payment attempt UUID');if(!id)return;
+ const restaurantMinor=Number(prompt('Restaurant share in paise (₹1 = 100 paise)'));
+ const driverMinor=Number(prompt('Driver share in paise'));
+ const platformMinor=Number(prompt('Platform share in paise'));
+ const reason=prompt('Reason for this local test allocation (10 characters minimum)');if(!reason)return;
+ await mutate('/admin/payments/settlements/'+encodeURIComponent(id.trim()),{restaurantMinor,driverMinor,platformMinor,reason});});
+ const exportButton=button('Export settlement CSV',async()=>{const rows=[['Attempt','Restaurant','Driver','Restaurant paise','Driver paise','Platform paise'],...data.settlements.map(s=>[s.attempt_id,s.restaurant_id,s.driver_id,s.restaurant_minor,s.driver_minor,s.platform_minor])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));link.download='waweigg-test-settlements.csv';link.click();URL.revokeObjectURL(link.href);});
+ content.replaceChildren(el('p','Local simulation only. Enter an explicit allocation that totals the captured amount. Completed orders do not automatically become paid payouts.'),actions(add,exportButton),table(['Payment','Restaurant / driver / platform (paise)','Payout records'],data.settlements.map(s=>[s.attempt_id,[s.restaurant_minor,s.driver_minor,s.platform_minor].join(' / '),actions(...['restaurant','driver'].map(beneficiary=>{const paid=data.payouts.find(p=>p.attempt_id===s.attempt_id&&p.beneficiary===beneficiary);return paid?el('span',beneficiary+': SIMULATED — '+paid.reference):button('Record test '+beneficiary+' payout',async()=>{const reference=prompt('Unique TEST- reference (at least 8 characters after TEST-)');const reason=prompt('Test confirmation reason (10 characters minimum)');if(reference&&reason)await mutate('/admin/payments/settlements/'+s.attempt_id+'/payout',{beneficiary,reference,reason});});}))])));return;
  }
  if(section==='Payments'){
   const [rows,ledger,recon,recovery]=await Promise.all([api('/admin/payments'),api('/admin/ledger'),api('/admin/reconciliation'),api('/orders/kitchen-admin/recovery')]);

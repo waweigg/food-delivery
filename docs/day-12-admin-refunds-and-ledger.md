@@ -1,3 +1,11 @@
+# Local settlement and payout extension
+
+Admin → Settlements now supports explicit allocations in integer paise. Copy a captured attempt ID from Payments, enter restaurant/driver/platform shares totaling the capture, and record a reason. Only paid, delivered local-test orders qualify; refund records block allocation. Identical retries reuse the allocation; conflicting changes are rejected.
+
+Record each beneficiary separately using a unique TEST- reference and confirmation reason. These are SIMULATED payout records, not bank transfers or evidence of a real payment. Amounts come from the immutable allocation. Journals balance and database triggers prevent history edits/deletion. Export settlement allocations as CSV. Commercial rules remain undecided; the UI deliberately asks for explicit local amounts instead of silently assigning compensation.
+
+Run `node scripts/day12-settlements-test.mjs` for isolated accounting checks. The earlier notes below describe the pre-extension scope.
+
 # Day 12 — Admin, refunds and ledger
 
 Local Day 12 foundation. The admin web app now has searchable order records and details with lifecycle events, a guarded cancellation action, payment/refund records, daily simulator reconciliation, and ledger CSV export. The existing dispatch admin already offers nearby manual driver assignment for unassigned orders. Day 11 still blocks reassignment after an accepted offer or pickup; support must resolve the existing delivery first.

@@ -332,7 +332,11 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
               ),
             ),
         ] else if (loaded && profile == null) ...[
-          const Icon(Icons.delivery_dining, size: 70, color: AppBrand.orange),
+          Icon(
+            Icons.delivery_dining,
+            size: 70,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           Text(
             'Your next route starts here',
             style: Theme.of(context).textTheme.headlineSmall,
@@ -373,7 +377,11 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
           ),
         ] else if (profile != null) ...[
           Card(
-            color: online ? Colors.green.shade50 : AppBrand.peach,
+            color: online
+                ? (Theme.of(context).brightness == Brightness.dark
+                      ? Colors.green.shade900
+                      : Colors.green.shade50)
+                : Theme.of(context).colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -381,7 +389,11 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
                   Icon(
                     Icons.delivery_dining,
                     size: 64,
-                    color: online ? Colors.green : AppBrand.orange,
+                    color: online
+                        ? (Theme.of(context).brightness == Brightness.dark
+                              ? Colors.green.shade200
+                              : Colors.green.shade700)
+                        : Theme.of(context).colorScheme.primary,
                   ),
                   Text(
                     online ? 'You are online' : 'You are offline',
@@ -552,4 +564,3 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
     ),
   );
 }
-

@@ -76,4 +76,19 @@ try{
  await until(async()=>(await job(empty)).offer_id!==pending);assert.equal((await db.query('SELECT state FROM driver_offers WHERE id=$1',[pending])).rows[0].state,'EXPIRED');
  await db.query("UPDATE dispatch_jobs SET attempts=3,next_attempt=now() WHERE order_id=$1",[empty]);await db.query("UPDATE driver_offers SET state='DECLINED' WHERE order_id=$1 AND state='PENDING'",[empty]);await until(async()=>(await job(empty)).state==='NEEDS_ATTENTION');
  console.log('PASS: distance ranking/radius, sequential decline/expiry/disconnect, expired acceptance rejected, one winner, held reservation across outage, confirmation retry, no-driver operations alert, bounded attempts and guarded manual fallback.');
+ await db.query('UPDATE driver_profiles SET online=false');await seed('load-driver',12.9716);
+ const loadIds=Array.from({length:3},()=>randomUUID());for(const id of loadIds)ready.set(id,'test');
+ for(let i=0;i<3;i++){
+  const offer=await until(async()=>(await db.query("SELECT * FROM driver_offers WHERE driver_id='load-driver' AND state='PENDING' AND expires_at>now()")).rows[0]);
+  // Let every concurrent job attempt dispatch before accepting the first offer.
+  await new Promise(r=>setTimeout(r,1200));
+  assert.equal((await db.query("SELECT count(*) FROM driver_offers WHERE driver_id='load-driver' AND state IN ('PENDING','ACCEPTED')")).rows[0].count,'1');
+  assert.equal((await call('/driver/offers/'+offer.id+'/accept','load-driver',{})).status,200);
+  await until(async()=>(await job(offer.order_id)).state==='ASSIGNED');
+  assert.equal((await call('/driver/deliveries/'+offer.order_id,'load-driver',{action:'pickup'})).status,200);
+  assert.equal((await call('/driver/deliveries/'+offer.order_id,'load-driver',{action:'deliver',pin:'123456'})).status,200);
+  for(const id of loadIds)await due(id);
+ }
+ for(const id of loadIds)assert.equal((await job(id)).state,'DELIVERED');
+ console.log('PASS: three concurrent ready orders queue behind one driver without competing offers or stranded orders.');
 }finally{for(const c of children)c.kill();await Promise.all(children.map(c=>once(c,'exit')));stub.closeAllConnections();stub.close();await db.query('DROP SCHEMA '+schema+' CASCADE');await db.end();}

@@ -37,7 +37,7 @@ export function createAuth(database:Database, sendRecovery?:RecoverySender) {
       return {data:session};
     }}}},
     rateLimit:{enabled:true,storage:'database',window:60,max:100,
-      customRules:{'/sign-in/email':{window:60,max:5},'/sign-up/email':{window:60,max:5},'/request-password-reset':{window:60,max:3},'/reset-password':{window:60,max:5}}},
+      customRules:{'/sign-in/email':{window:60,max:5},'/sign-up/email':{window:60,max:5},'/request-password-reset':{window:60,max:3},'/reset-password':{window:60,max:5},'/change-password':{window:60,max:5}}},
     advanced:{useSecureCookies:deployed},
     plugins:[bearer({requireSignature:true})],
   });

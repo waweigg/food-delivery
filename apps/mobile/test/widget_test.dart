@@ -21,6 +21,7 @@ class FakeApi extends ApiClient {
 }
 
 Future<void> signIn(WidgetTester tester) async {
+  await tester.pumpAndSettle();
   await tester.tap(find.text('Account'));
   await tester.pumpAndSettle();
   await tester.enterText(find.widgetWithText(TextFormField, 'Email'), 'tester@example.test');

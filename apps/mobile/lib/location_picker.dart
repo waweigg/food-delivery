@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'brand.dart';
 
 Future<Map<String, dynamic>?> selectLocation(
   BuildContext context,
@@ -108,10 +109,10 @@ class _LocationPickerState extends State<LocationPicker> {
   Widget build(BuildContext context) => SafeArea(
     child: SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20,
+        AppBrand.pagePadding,
         8,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 20,
+        AppBrand.pagePadding,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Form(
         key: form,
@@ -132,17 +133,23 @@ class _LocationPickerState extends State<LocationPicker> {
               icon: const Icon(Icons.my_location),
               label: const Text('Use my current location'),
             ),
-            if (busy) const LinearProgressIndicator(),
-            if (error != null) Text(error!),
-            if (kDebugMode)
+            if (busy || error != null) ...[
+              const SizedBox(height: 12),
+              if (busy) const LinearProgressIndicator(),
+              if (error != null) Text(error!),
+            ],
+            if (kDebugMode) ...[
+              const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: busy
                     ? null
                     : () => choose(11.074, 76.0745, 'Malappuram demo area'),
                 child: const Text('Use Malappuram demo location'),
               ),
-            const SizedBox(height: 16),
+            ],
+            const SizedBox(height: 24),
             const Text('Or select a location manually'),
+            const SizedBox(height: 8),
             TextFormField(
               controller: area,
               decoration: const InputDecoration(
@@ -153,10 +160,11 @@ class _LocationPickerState extends State<LocationPicker> {
             const Text(
               'Enter coordinates from your map app. You can add your building and contact number at checkout.',
             ),
+            const SizedBox(height: 12),
             for (final field in [
               (lat, 'Latitude', 90),
               (lon, 'Longitude', 180),
-            ])
+            ]) ...[
               TextFormField(
                 controller: field.$1,
                 keyboardType: const TextInputType.numberWithOptions(
@@ -171,7 +179,9 @@ class _LocationPickerState extends State<LocationPicker> {
                       : null;
                 },
               ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 12),
+            ],
+            const SizedBox(height: 8),
             FilledButton(
               onPressed: busy
                   ? null

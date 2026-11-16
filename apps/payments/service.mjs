@@ -1,3 +1,4 @@
+import {settlements} from './settlements.mjs';
 import http from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
@@ -99,6 +100,7 @@ async function processRefund(r){
 }
 async function adminRoute(req,path){
   const admin=await administrator(req);
+  if(path.startsWith('/admin/payments/settlements'))return settlements({req,path,admin,pool,tx,remote,parse,rawBody,fail,env});
   if(path==='/admin/payments'&&req.method==='GET'){
     const q=(new URL(req.url,'http://local').searchParams.get('q')??'').trim().slice(0,100);
     return (await pool.query(`SELECT a.id,a.order_id,a.provider,a.reference,a.amount,a.currency,a.status,a.created_at,
@@ -109,7 +111,7 @@ async function adminRoute(req,path){
   if(path==='/admin/ledger'&&req.method==='GET'){
     const rows=(await pool.query('SELECT id,journal_id,order_id,attempt_id,refund_id,account,amount,currency,created_at FROM ledger_entries ORDER BY created_at DESC,id DESC LIMIT 2000')).rows;
     const total=Number((await pool.query('SELECT COALESCE(sum(amount),0) AS total FROM ledger_entries')).rows[0].total);
-    return {entries:rows,balanced:total===0,settlementReady:false,settlementNote:'Commission, driver earnings, funds recipient and payout schedule have not been configured. No earnings are marked payable or paid.'};
+    return {entries:rows,balanced:total===0,settlementReady:false,settlementNote:'Use Settlements to allocate completed local test orders and record simulated payouts. Production payout rules remain unconfigured.'};
   }
   if(path==='/admin/reconciliation'&&req.method==='GET'){
     if(provider.name!=='local-test')fail(409,'Automated provider comparison is available only for the local simulator');

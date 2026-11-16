@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
+import 'brand.dart';
 import 'menu_screens.dart' show priceText;
 
 class PaymentScreen extends StatefulWidget {
@@ -41,7 +42,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final a=attempt;
     final status=a?['status'];
     final local=a?['provider']=='local-test';
-    return Scaffold(appBar:AppBar(title:const Text('Test payment')),body:ListView(padding:const EdgeInsets.all(24),children:[
+    return Scaffold(appBar:AppBar(title:const Text('Test payment')),body:ListView(padding:AppBrand.pageInsets(context),children:[
       if(a!=null)...[
         Text(local?'Local payment simulator':'Stripe test checkout',style:Theme.of(context).textTheme.titleLarge),
         const SizedBox(height:12),Text('INR ${priceText(a['amountMinor'] as int)}',style:Theme.of(context).textTheme.headlineLarge),
@@ -49,8 +50,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
         const SizedBox(height:18),
         if(status=='PENDING' && local)...[
           const Text('Choose a test result. No card details or money are needed.'),
+          const SizedBox(height: 16),
           FilledButton(onPressed:busy?null:()=>request(token:'test_approve'),child:const Text('Approve test payment')),
+          const SizedBox(height: 12),
           OutlinedButton(onPressed:busy?null:()=>request(token:'test_decline'),child:const Text('Simulate decline')),
+          const SizedBox(height: 8),
           TextButton(onPressed:busy?null:()=>request(token:'test_abandon'),child:const Text('Abandon test payment')),
         ],
         if(status=='PENDING' && !local && a['checkoutUrl']!=null)
@@ -58,10 +62,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if(status=='SUCCEEDED')...[
           const Icon(Icons.check_circle,color:Colors.green,size:54),const Text('Test payment successful',textAlign:TextAlign.center),
           SelectableText('Reference: ${a['reference']}',textAlign:TextAlign.center),
+          const SizedBox(height: 16),
           FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('Done')),
         ],
         if(status=='FAILED'||status=='ABANDONED')...[
           Text(status=='FAILED'?'Payment declined. The order is unpaid.':'Checkout abandoned. The order is unpaid.'),
+          const SizedBox(height: 16),
           FilledButton(onPressed:busy?null:()=>request(start:true),child:const Text('Try another test payment')),
         ],
       ],

@@ -10,7 +10,7 @@ Implementation is present. Backend acceptance checks pass locally. Mobile runtim
 - Admin disable/enable changes, session revocation and their audit events are committed in one transaction. Admins cannot disable themselves or other admins through the mobile endpoint.
 - Password recovery uses a one-hour, single-use token entered in the app. A successful reset invalidates existing sessions. Missing recovery mail configuration returns a generic service-unavailable response before account lookup.
 - Login, registration and recovery endpoints have database-backed rate limits. Auth-library origin/CSRF checks remain enabled. Business API routes accept bearer headers only, never ambient cookies.
-- Flutter source includes registration, sign-in, recovery/reset, logout, expired-session handling and a dashboard for each server-assigned role. Tokens stay in memory; restarting the app requires sign-in. Persistent secure storage is deferred rather than saving tokens in plain text.
+- Flutter restores the server-issued session from Android encrypted storage or the iOS device Keychain. The server still checks expiry and revocation. Account → Settings includes device, light and dark appearance and signed-in profile and password editing. Profile editing changes the display name. Password changes rotate the current session and revoke other sessions. Android local builds also require SDK Platform 35 for a native dependency.
 - All ordering functionality remains disabled.
 
 ## Run with Docker locally
@@ -52,7 +52,9 @@ Only the first admin can be provisioned by this command. Further admins need a s
 | POST /api/auth/sign-out | Current session |
 | POST /api/auth/request-password-reset | Public, generic response, rate limited |
 | POST /api/auth/reset-password | Valid one-time token |
+| POST /api/auth/change-password | Current session and password |
 | GET /me and /dashboard | Current active bearer session |
+| POST /me/profile | Current session, own display name only |
 | GET /restaurants/:id/private | Matching restaurant member |
 | GET /drivers/:id/private | Matching approved driver |
 | GET /admin/users and /admin/audit | Admin |

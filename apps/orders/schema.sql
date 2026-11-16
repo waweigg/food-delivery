@@ -106,3 +106,26 @@ CREATE TABLE IF NOT EXISTS delivery_confirmations (
  attempts integer NOT NULL DEFAULT 0, locked_until timestamptz,
  picked_up_at timestamptz, completed_at timestamptz, issue text, resolution text
 );
+
+-- Day 15 local pilot. Existing development ordering remains available before a pilot is configured.
+CREATE TABLE IF NOT EXISTS pilot_control (
+ singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+ paused boolean NOT NULL DEFAULT false,
+ version integer NOT NULL DEFAULT 0,
+ window_id uuid,
+ opens_at timestamptz,
+ closes_at timestamptz,
+ restaurants text[],
+ order_cap integer CHECK(order_cap BETWEEN 1 AND 100),
+ admitted integer NOT NULL DEFAULT 0 CHECK(admitted >= 0 AND admitted <= order_cap)
+);
+INSERT INTO pilot_control(singleton) VALUES(true) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS pilot_admissions (
+ order_id uuid PRIMARY KEY REFERENCES orders(id), window_id uuid NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pilot_admissions_window ON pilot_admissions(window_id);
+CREATE TABLE IF NOT EXISTS pilot_audit (
+ id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ actor text NOT NULL, action text NOT NULL, reason text NOT NULL,
+ settings jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);

@@ -33,14 +33,22 @@ class _StorefrontState extends State<Storefront> {
   void initState() {
     super.initState();
     shopping.addListener(locationChanged);
+    widget.api.sessionEnded.addListener(clearAccountData);
   }
 
   @override
   void dispose() {
+    widget.api.sessionEnded.removeListener(clearAccountData);
     shopping.removeListener(locationChanged);
     shopping.dispose();
     search.dispose();
     super.dispose();
+  }
+
+  void clearAccountData() {
+    shopping.favourites.clear();
+    shopping.clear();
+    shopping.setDelivery({});
   }
 
   void locationChanged() {
@@ -196,7 +204,7 @@ class _StorefrontState extends State<Storefront> {
       child: RefreshIndicator(
         onRefresh: () => load(),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+          padding: AppBrand.pageInsets(context, top: 12),
           children: [
             Row(
               children: [
@@ -218,9 +226,9 @@ class _StorefrontState extends State<Storefront> {
             const SizedBox(height: 18),
             Card(
               child: ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.location_on_outlined,
-                  color: AppBrand.orange,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 title: const Text('Delivering to'),
                 subtitle: Text(title),
@@ -354,7 +362,7 @@ class FoodHero extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
-      color: AppBrand.peach,
+      color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(24),
     ),
     child: Row(
@@ -363,10 +371,10 @@ class FoodHero extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'YOUR NEXT FAVOURITE',
                 style: TextStyle(
-                  color: AppBrand.orange,
+                  color: Theme.of(context).colorScheme.primary,
                   fontSize: 10,
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w800,
@@ -389,15 +397,15 @@ class FoodHero extends StatelessWidget {
         Container(
           width: 64,
           height: 64,
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
             shape: BoxShape.circle,
           ),
-          child: const Center(
+          child: Center(
             child: Icon(
               Icons.ramen_dining_rounded,
               size: 38,
-              color: AppBrand.orange,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
         ),
@@ -428,17 +436,19 @@ class RestaurantTile extends StatelessWidget {
           Container(
             height: 112,
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFFE7F0F7), Color(0xFFF9E6D7)],
+                colors: Theme.of(context).brightness == Brightness.dark
+                    ? const [Color(0xFF263945), Color(0xFF482D20)]
+                    : const [Color(0xFFE7F0F7), Color(0xFFF9E6D7)],
               ),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.storefront_rounded,
                   size: 58,
-                  color: AppBrand.orange,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 const Spacer(),
                 Align(
@@ -479,10 +489,10 @@ class RestaurantTile extends StatelessWidget {
                           : 'Currently closed',
                       positive: restaurant['isOpen'] == true,
                     ),
-                    const Text(
+                    Text(
                       'View menu →',
                       style: TextStyle(
-                        color: AppBrand.orange,
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -558,10 +568,10 @@ class _DeliveryFormState extends State<DeliveryForm> {
   Widget build(BuildContext context) => SafeArea(
     child: SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20,
+        AppBrand.pagePadding,
         8,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 20,
+        AppBrand.pagePadding,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Form(
         key: form,
@@ -592,9 +602,11 @@ class _DeliveryFormState extends State<DeliveryForm> {
             const Text(
               'Enter the coordinates of your delivery entrance to check coverage.',
             ),
+            const SizedBox(height: 12),
             field('latitude', 'Latitude', range: 90, max: 24),
             field('longitude', 'Longitude', range: 180, max: 24),
             field('instructions', 'Delivery instructions (optional)'),
+            const SizedBox(height: 8),
             FilledButton(
               onPressed: () {
                 if (form.currentState!.validate()) {
@@ -632,7 +644,7 @@ class BasketScreen extends StatelessWidget {
         title: const Text('Your basket'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: AppBrand.pageInsets(context),
         children: [
           if (shopping.lines.isEmpty)
             EmptyPanel(
@@ -646,7 +658,10 @@ class BasketScreen extends StatelessWidget {
               ),
             )
           else ...[
-            const StatusPill('Draft basket'),
+            const Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: StatusPill('Draft basket'),
+            ),
             const SizedBox(height: 12),
             Text(
               shopping.restaurantName!,
@@ -675,7 +690,6 @@ class BasketScreen extends StatelessWidget {
                             child: Text(
                               '${shopping.currency} ${priceText(entry.value.total)}',
                               style: const TextStyle(
-                                color: AppBrand.ink,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -697,9 +711,9 @@ class BasketScreen extends StatelessWidget {
                                     entry.value.quantity + 1,
                                   ),
                             tooltip: 'Add one ${entry.value.item['name']}',
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.add_circle_outline,
-                              color: AppBrand.orange,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ],
@@ -711,9 +725,9 @@ class BasketScreen extends StatelessWidget {
             const SizedBox(height: 20),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
+              leading: Icon(
                 Icons.location_on_outlined,
-                color: AppBrand.orange,
+                color: Theme.of(context).colorScheme.primary,
               ),
               title: const Text('Delivery address'),
               subtitle: Text(
@@ -730,15 +744,16 @@ class BasketScreen extends StatelessWidget {
                 const Expanded(
                   child: Text(
                     'Item subtotal',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppBrand.ink,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                Text(
-                  '${shopping.currency} ${priceText(shopping.subtotal)}',
-                  style: Theme.of(context).textTheme.titleLarge,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '${shopping.currency} ${priceText(shopping.subtotal)}',
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
               ],
             ),
@@ -952,8 +967,33 @@ class _QuoteReviewState extends State<QuoteReview> {
     }
   }
 
-  Widget amount(String title, int minor) =>
-      ListTile(title: Text(title), trailing: Text('INR ${priceText(minor)}'));
+  Widget amount(String title, int minor, {bool total = false}) {
+    final theme = Theme.of(context).textTheme;
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: Text(title, style: total ? theme.titleMedium : null),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 2,
+              child: Text(
+                'INR ${priceText(minor)}',
+                textAlign: TextAlign.end,
+                style: total ? theme.titleMedium : theme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final confirmed = receipt;
@@ -962,7 +1002,7 @@ class _QuoteReviewState extends State<QuoteReview> {
       return Scaffold(
         appBar: AppBar(title: const Text('Test order placed')),
         body: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: AppBrand.pageInsets(context),
           children: [
             const Icon(Icons.check_circle, color: Colors.green, size: 54),
             const SizedBox(height: 18),
@@ -975,7 +1015,8 @@ class _QuoteReviewState extends State<QuoteReview> {
                 '${line['quantity']} × ${line['name']}',
                 line['lineMinor'],
               ),
-            amount('Total', details['totalMinor']),
+            amount('Total', details['totalMinor'], total: true),
+            const SizedBox(height: 12),
             Text(
               confirmed['payment_state'] == 'PAID'
                   ? 'Paid with test funds.'
@@ -999,6 +1040,7 @@ class _QuoteReviewState extends State<QuoteReview> {
                 },
                 child: const Text('Make test payment'),
               ),
+            const SizedBox(height: 12),
             FilledButton(
               onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
               child: const Text('Back to Explore'),
@@ -1011,13 +1053,15 @@ class _QuoteReviewState extends State<QuoteReview> {
     return Scaffold(
       appBar: AppBar(title: const Text('Order review')),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: AppBrand.pageInsets(context),
         children: [
           Text(
             widget.shopping.restaurantName ?? '',
             style: Theme.of(context).textTheme.titleLarge,
           ),
+          const SizedBox(height: 12),
           ListTile(
+            contentPadding: EdgeInsets.zero,
             title: const Text('Delivery address'),
             subtitle: Text(
               widget.shopping.address.isEmpty
@@ -1044,6 +1088,7 @@ class _QuoteReviewState extends State<QuoteReview> {
               ),
             ),
           if (q != null) ...[
+            const Divider(),
             for (final line in q['items'] as List)
               amount(
                 '${line['quantity']} × ${line['name']}',
@@ -1054,10 +1099,12 @@ class _QuoteReviewState extends State<QuoteReview> {
             amount('Delivery fee', q['deliveryMinor'] as int),
             amount('Other charges', q['otherMinor'] as int),
             const Divider(),
-            amount('Total', q['totalMinor'] as int),
+            amount('Total', q['totalMinor'] as int, total: true),
+            const SizedBox(height: 12),
             const Text(
               'Local test only. Use simulated payment; an approved test driver can receive an offer after the restaurant marks the order ready.',
             ),
+            const SizedBox(height: 16),
             FilledButton(
               onPressed: busy ? null : place,
               child: Text(

@@ -9,6 +9,19 @@ export class IdentityController {
   constructor(private readonly database:Database) {}
   @Get('me') me(@Req() request:AuthRequest) { return request.identity; }
 
+  @Post('me/profile') async profile(@Req() request:AuthRequest,@Body() body:unknown) {
+    const name = body && typeof body === 'object' ? (body as {name?:unknown}).name : undefined;
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100 ||
+        Object.keys(body as object).some(key => key !== 'name') || /[\u0000-\u001f\u007f]/.test(name)) {
+      throw new BadRequestException('Enter a display name of 1–100 characters');
+    }
+    return this.database.user.update({
+      where:{id:request.identity.id},
+      data:{name:name.trim()},
+      select:{id:true,name:true,email:true,role:true},
+    });
+  }
+
   @Get('dashboard') async dashboard(@Req() request:AuthRequest) {
     const user=request.identity;
     const restaurants=user.role==='RESTAURANT' ? await this.database.restaurantMembership.findMany({where:{userId:user.id},select:{restaurant:{select:{id:true,name:true}}}}) : [];

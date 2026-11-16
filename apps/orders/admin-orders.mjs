@@ -1,3 +1,4 @@
+import {pilotAdmin} from './pilot.mjs';
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
 async function administrator(req){
  const auth=req.headers.authorization;if(!auth)fail(401,'Sign in required');
@@ -7,6 +8,7 @@ async function administrator(req){
 }
 export async function adminOrders({req,path,pool,transaction,event,body}){
  const admin=await administrator(req);
+ if(path==='/orders/admin/pilot')return pilotAdmin({req,path,pool,transaction,body,admin});
  if(path==='/orders/admin'&&req.method==='GET'){
   const q=(new URL(req.url,'http://local').searchParams.get('q')??'').trim().slice(0,100);
   return (await pool.query(`SELECT o.id,o.customer_id,o.restaurant_id,o.order_state,o.payment_state,o.delivery_state,o.quote->>'currency' AS currency,

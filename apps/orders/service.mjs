@@ -1,5 +1,6 @@
 import {customerDelivery,adminDelivery} from './delivery.mjs';
 import {adminOrders} from './admin-orders.mjs';
+import {pilotAdmission} from './pilot.mjs';
 import {dispatchRoute} from './dispatch.mjs';
 import {enqueueKitchen,expireBatch,kitchenRoute} from './kitchen.mjs';
 import http from 'node:http';
@@ -54,8 +55,10 @@ async function checkout(owner,b){
     const quote=await r.json();
     const normalized=q=>({...q,items:[...q.items].sort((a,b)=>a.itemId.localeCompare(b.itemId))});
     if(!Array.isArray(b.review.items)||digest(normalized(quote))!==digest(normalized(b.review)))fail(409,'Prices changed. Review the latest quote.');
+    const windowId=await pilotAdmission(c,b.restaurantId);
     const id=randomUUID();
     const result=await c.query("INSERT INTO orders(id,customer_id,checkout_key,fingerprint,restaurant_id,quote,address,order_state,payment_state,delivery_state) VALUES($1,$2,$3,$4,$5,$6,$7,'PLACED','UNPAID','UNASSIGNED') RETURNING "+projection,[id,owner,b.key,fingerprint,b.restaurantId,quote,b.basket.address]);
+    if(windowId)await c.query('INSERT INTO pilot_admissions(window_id,order_id) VALUES($1,$2)',[windowId,id]);
     await event(c,id,'TEST_ORDER_PLACED',owner);
     return result.rows[0];
   });

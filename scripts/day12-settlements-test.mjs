@@ -1,0 +1,18 @@
+import {PGlite} from '../apps/restaurants/node_modules/@electric-sql/pglite/dist/index.js';
+import {readFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import assert from 'node:assert/strict';
+import {settlements} from '../apps/payments/settlements.mjs';
+const db=new PGlite();await db.exec(await readFile(new URL('../apps/payments/schema.sql',import.meta.url),'utf8'));
+const pool={query:async(s,p)=>{const r=await db.query(s,p);return {...r,rowCount:r.rows.length||r.affectedRows||0};}};
+const id=randomUUID();await pool.query("INSERT INTO attempts(id,order_id,owner_id,amount,currency,provider,status,synchronized) VALUES($1,$2,'test',21000,'INR','local-test','SUCCEEDED',true)",[id,randomUUID()]);
+const run=(body,payout=false)=>settlements({req:{method:'POST',headers:{authorization:'test'}},path:'/admin/payments/settlements/'+id+(payout?'/payout':''),admin:{id:'admin'},pool,tx:fn=>db.transaction(async t=>fn({query:async(s,p)=>{const r=await t.query(s,p);return {...r,rowCount:r.rows.length||r.affectedRows||0};}})),remote:async()=>({delivery_state:'DELIVERED',payment_state:'PAID',driver_id:'driver',restaurant_id:'restaurant'}),parse:JSON.parse,rawBody:async()=>JSON.stringify(body),fail:(status,message)=>{throw Object.assign(Error(message),{status});},env:{APP_ENV:'development',PAYMENT_PROVIDER:'local-test',ORDERS_URL:'test'}});
+await assert.rejects(run({restaurantMinor:1,driverMinor:2,platformMinor:3,reason:'invalid test allocation'}));
+const allocation={restaurantMinor:18000,driverMinor:3000,platformMinor:0,reason:'Explicit local test fixture'};
+await run(allocation);await run(allocation);await assert.rejects(run({...allocation,restaurantMinor:17000,platformMinor:1000}));
+const payout={beneficiary:'restaurant',reference:'TEST-restaurant-12345',reason:'Simulated receipt confirmation'};
+await run(payout,true);await run(payout,true);await assert.rejects(run({...payout,reference:'TEST-different-12345'},true));
+assert.equal((await db.query('SELECT * FROM test_payouts')).rows.length,1);
+assert.equal(Number((await db.query('SELECT sum(amount) total FROM settlement_journal')).rows[0].total),0);
+await assert.rejects(db.query('DELETE FROM settlements'));
+console.log('PASS: allocation conservation, retry idempotency, conflicting requests, payout uniqueness, balanced journals and immutable history');await db.close();

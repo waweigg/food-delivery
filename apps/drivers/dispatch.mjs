@@ -26,12 +26,13 @@ export function createDispatch({pool,transaction,fresh,audit,body}){
  }
  async function candidates(c,j){
   if(j.latitude==null||j.longitude==null)return [];
-  const rows=(await c.query("SELECT d.* FROM driver_profiles d WHERE status='APPROVED' AND online AND EXISTS(SELECT 1 FROM driver_registrations r WHERE r.user_id=d.user_id) AND NOT EXISTS(SELECT 1 FROM driver_offers o WHERE o.driver_id=d.user_id AND o.state='ACCEPTED')")).rows;
+  const rows=(await c.query("SELECT d.* FROM driver_profiles d WHERE status='APPROVED' AND online AND EXISTS(SELECT 1 FROM driver_registrations r WHERE r.user_id=d.user_id) AND NOT EXISTS(SELECT 1 FROM driver_offers o WHERE o.driver_id=d.user_id AND (o.state='ACCEPTED' OR (o.state='PENDING' AND o.expires_at>now())))")).rows;
   return rows.filter(fresh).map(d=>({user_id:d.user_id,name:d.name,vehicle:d.vehicle,distanceMetres:Math.round(distanceMetres(j.latitude,j.longitude,d.latitude,d.longitude))})).filter(d=>d.distanceMetres<=radius).sort((a,b)=>a.distanceMetres-b.distanceMetres||a.user_id.localeCompare(b.user_id));
  }
  async function newOffer(c,j,driver){
   const d=(await c.query('SELECT * FROM driver_profiles WHERE user_id=$1 FOR UPDATE',[driver.user_id])).rows[0];
-  if(!d||!fresh(d)||distanceMetres(j.latitude,j.longitude,d.latitude,d.longitude)>radius||(await c.query("SELECT 1 FROM driver_offers WHERE driver_id=$1 AND state='ACCEPTED'",[driver.user_id])).rowCount)return false;
+  // Recheck while holding the driver lock: another worker may have offered a different order.
+  if(!d||!fresh(d)||distanceMetres(j.latitude,j.longitude,d.latitude,d.longitude)>radius||(await c.query("SELECT 1 FROM driver_offers WHERE driver_id=$1 AND (state='ACCEPTED' OR (state='PENDING' AND expires_at>now()))",[driver.user_id])).rowCount)return false;
   const id=randomUUID();
   await c.query("INSERT INTO driver_offers(id,order_id,driver_id,pickup,expires_at,dispatch_round) VALUES($1,$2,$3,$4,LEAST(now()+$5*interval '1 second',$6::timestamptz),$7)",[id,j.order_id,driver.user_id,j.pickup,seconds,j.deadline,j.round]);
   await c.query("UPDATE dispatch_jobs SET offer_id=$2,attempts=attempts+1,issue=NULL WHERE order_id=$1",[j.order_id,id]);

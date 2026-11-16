@@ -1,3 +1,21 @@
+# Day 15 local pilot
+
+Implemented audited pilot window, restaurant allowlist, concurrent intake cap and pause in the orders service and exposed them in the admin Pilot page. Local Compose rebuilt orders, its worker and the gateway. Isolated order acceptance and the deployed two-order simulator drill passed. Checkout remains paused. The hosted launch gate remains closed pending Day 14 external prerequisites and operator sign-off. See [the Day 15 handoff](day-15-local-pilot.md).
+
+# Day 14 local readiness
+
+Added local health, error and business-state monitoring with Mailpit alert delivery, a five-database backup and isolated restore drill, a payment image rollback rehearsal, and deployment, incident, reconciliation and support runbooks. All five restores and the payment rollback passed. The local test alert reached Mailpit and Kubernetes configuration rendered. Production merchant, hosting, live acceptance and operator sign-off are pending. See [the Day 14 runbook and evidence](day-14-local-readiness.md).
+
+# Day 13 local verification — November 14, 2026
+
+Local Day 13 scope completed in the November 15 follow-up: three concurrent checkouts completed payment through PIN-confirmed delivery across the deployed services. Fixed competing dispatch offers to one driver; dispatch regression passed. Checkout p95/max 113 ms, queued ready-to-offer p95/max 13.6 seconds (three samples only). Flutter analysis and 24 tests passed, including contrast, labels, tap targets and 200% text. Updated APK installed; Pixel 8 restaurant/menu/basket/review screenshots and Android semantics checked. Fixed UI accent contrast. Emulator needed software rendering; repeat with scripts/open-pixel-review.ps1. Physical devices, full TalkBack audit and production capacity remain outside scope. See [verification evidence](day-13-system-verification.md).
+
+# Local Day 12 settlement and payout extension — November 14, 2026
+
+Added admin settlement allocation for paid delivered simulator orders, explicit per-order restaurant/driver/platform shares, CSV export, immutable balanced allocation and simulated payout journals, recipient-specific payout records with unique TEST- references and retry protection. Payments owns the data and verifies completion through the orders HTTP API; no cross-service database access. No bank transfer or live payout integration exists.
+
+Verification: isolated SQL-backed checks passed for allocation conservation, identical retries, conflicting allocations/references, unique payouts, balanced journals and immutable history. Docker payments/gateway images built. Browser visual verification and live-provider payout verification were not performed.
+
 # Day 12 — Admin, refunds and ledger (core flow verified; settlement incomplete)
 
 Implemented locally on November 13–14, 2026. Added searchable admin order detail/history and guarded cancellations; full-refund reservation across orders/payments services; provider-idempotent asynchronous refund processing; append-only balanced capture/reversal journals; local simulator reconciliation; and admin ledger CSV export. Existing admin dispatch continues to support audited offers to eligible nearby drivers. See [Day 12](day-12-admin-refunds-and-ledger.md).

@@ -82,6 +82,17 @@ test('Day 2: real SQL migrations, authentication, tenant boundaries, revocation 
       await database.driverProfile.update({where:{id:driverProfile.id},data:{approved:false}});
       assert.equal((await request(`/drivers/${driverProfile.id}/private`,undefined,d.token)).status,404);
     });
+    await t.test('a session can edit only its own display name',async()=>{
+      assert.equal((await request('/me/profile',{name:'Renamed'})).status,401);
+      assert.equal((await request('/me/profile',{name:'Renamed',role:'ADMIN'},customer.token)).status,400);
+      assert.equal((await request('/me/profile',{name:'   '},customer.token)).status,400);
+      const update=await request('/me/profile',{name:'  Updated Customer  '},customer.token);
+      assert.equal(update.status,201);
+      assert.equal(update.data.id,customer.data.user.id);
+      assert.equal(update.data.role,'CUSTOMER');
+      assert.equal((await request('/me',undefined,customer.token)).data.name,'Updated Customer');
+      assert.notEqual((await request('/me',undefined,ad.token)).data.name,'Updated Customer');
+    });
     await t.test('logout and session expiry immediately reject credentials',async()=>{
       assert.equal((await request('/api/auth/sign-out',{},a.token)).status,200);
       assert.equal((await request('/me',undefined,a.token)).status,401);
@@ -117,6 +128,19 @@ test('Day 2: real SQL migrations, authentication, tenant boundaries, revocation 
       const expiredToken=messages.at(-1).text.match(/code in the app: (\S+)/)[1];
       await database.verification.updateMany({data:{expiresAt:new Date(0)}});
       assert.notEqual((await request('/api/auth/reset-password',{token:expiredToken,newPassword:password})).status,200);
+    });
+    await t.test('changing the password rotates the bearer token and revokes other sessions',async()=>{
+      await database.rateLimit.deleteMany();
+      const second=await login('driver');
+      const newPassword='Local-changed-password-2026!';
+      const data={currentPassword:password,newPassword,revokeOtherSessions:true};
+      assert.equal((await request('/api/auth/change-password',{...data,currentPassword:'incorrect'},d.token)).status,400);
+      const changed=await request('/api/auth/change-password',data,d.token);
+      assert.equal(changed.status,200);
+      assert.ok(changed.token);
+      assert.equal((await request('/me',undefined,d.token)).status,401);
+      assert.equal((await request('/me',undefined,second.token)).status,401);
+      assert.equal((await request('/me',undefined,changed.token)).data.role,'DRIVER');
     });
     await t.test('login rate limits ignore spoofed forwarded addresses',async()=>{
       await database.rateLimit.deleteMany();let result;

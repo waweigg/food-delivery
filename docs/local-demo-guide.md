@@ -22,3 +22,16 @@ The three fictional restaurants are Malabar Biriyani House (Demo), Coconut & Cur
 The customer flow uses 20 px page/card spacing, consistent section gaps, a compact home banner, wrapping restaurant actions, safe-area basket controls and responsive typography. The admin workspace uses a responsive sidebar, bounded content area, consistent table/cell spacing and a mobile-width layout. No external fonts, analytics or third-party assets are required.
 
 Day 11: customer My test orders → paid order shows the delivery PIN and tracking timeline. Delivery account Driver centre → Confirm pickup → Food collected → enter the customer's PIN → Complete delivery. Only share the PIN at handover. Admin web → Deliveries handles reported issues and documented exceptions. See day-11-delivery.md. The same four accounts remain valid.
+
+## Test on a physical phone
+
+**Android using the Windows PC:** Start the local Docker services and keep the gateway on loopback. Build an ARM/ARM64 test APK from the repository root with `powershell -File scripts/build-pixel-apk.ps1 -PhysicalAndroid` (add `-Online` if Gradle needs dependencies). The output is `apps/mobile/build/app/outputs/flutter-apk/waweigg-android-usb.apk`. On the phone, enable USB debugging, connect it to the PC and accept its USB debugging prompt. Run the following from a terminal with Android platform-tools on PATH:
+
+```powershell
+adb -d reverse tcp:8088 tcp:8088
+adb -d install -r apps/mobile/build/app/outputs/flutter-apk/waweigg-android-usb.apk
+```
+
+Use the configured gateway port if it differs from 8088. Open waweigg on the phone and keep the USB connection and Docker stack running during backend tests. After reconnecting the cable, run the reverse command again if needed. For test orders, sign in to the local admin and open a staffed window in **Pilot** if checkout is paused. Recovery codes arrive in the local Mailpit inbox.
+
+**iPhone:** Build and sign the Flutter app on a Mac with Xcode and an Apple Account or use an existing signed TestFlight setup. Configure the app with a private HTTPS API URL the iPhone can reach. The Windows loopback address used by the Android USB build is specific to that setup. See [Apple's device testing guide](https://developer.apple.com/documentation/xcode/building-and-running-an-app) for signing and pairing steps.

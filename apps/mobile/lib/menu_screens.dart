@@ -105,9 +105,36 @@ class _MenuScreenState extends State<MenuScreen> {
     final matches = visibleCategories.fold<int>(0, (sum, c) => sum + (c['items'] as List).where((i) => '${i['name']} ${i['description']}'.toLowerCase().contains(query)).length);
     return Scaffold(
       appBar: AppBar(title: const Text('Explore the menu'), actions: [IconButton(onPressed: busy ? null : load, icon: const Icon(Icons.refresh), tooltip: 'Refresh menu')]),
-      bottomNavigationBar: shopping.count == 0 ? null : SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(20, 10, 20, 14), child: FilledButton(onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => BasketScreen(api: widget.api, shopping: shopping))), child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [const Icon(Icons.shopping_bag_outlined), const SizedBox(width: 10), Expanded(child: Text('View basket · ${shopping.count}')), Text('${shopping.currency} ${priceText(shopping.subtotal)}')]))))),
-      body: RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 28), children: [
-        Container(padding: const EdgeInsets.all(22), decoration: BoxDecoration(color: AppBrand.peach, borderRadius: BorderRadius.circular(24)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.restaurant_menu_rounded, size: 36, color: AppBrand.orange), const SizedBox(height: 18), Text(widget.restaurantName, style: Theme.of(context).textTheme.headlineMedium), const SizedBox(height: 10), const Text('Find something you’ll love, one dish at a time.'), const SizedBox(height: 16), const StatusPill('Menu preview')])),
+      bottomNavigationBar: shopping.count == 0 ? null : SafeArea(
+        child: Builder(
+          builder: (context) => Padding(
+            padding: AppBrand.pageInsets(context, top: 10, bottom: 14),
+            child: FilledButton(
+              onPressed: () => Navigator.push(context, MaterialPageRoute<void>(
+                builder: (_) => BasketScreen(api: widget.api, shopping: shopping),
+              )),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(children: [
+                  const Icon(Icons.shopping_bag_outlined),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 3, child: Text('View basket · ${shopping.count}')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      '${shopping.currency} ${priceText(shopping.subtotal)}',
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: RefreshIndicator(onRefresh: load, child: ListView(padding: AppBrand.pageInsets(context, top: 8), children: [
+        Container(padding: const EdgeInsets.all(22), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(24)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.restaurant_menu_rounded, size: 36, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 18), Text(widget.restaurantName, style: Theme.of(context).textTheme.headlineMedium), const SizedBox(height: 10), const Text('Find something you’ll love, one dish at a time.'), const SizedBox(height: 16), const StatusPill('Menu preview')])),
         const SizedBox(height: 18), TextField(onChanged: (value) => setState(() => query = value.trim().toLowerCase()), decoration: const InputDecoration(hintText: 'Search this menu', prefixIcon: Icon(Icons.search))),
         const SizedBox(height: 14), if (categories.isNotEmpty) SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: const Text('All dishes'), selected: selectedCategory == null, onSelected: (_) => setState(() => selectedCategory = null))), for (final c in categories) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(c['name'] as String), selected: selectedCategory == c['id'], onSelected: (_) => setState(() => selectedCategory = c['id'] as String)))])),
         if (busy) const LinearProgressIndicator(),
@@ -118,12 +145,12 @@ class _MenuScreenState extends State<MenuScreen> {
           for (final raw in c['items'] as List) if ('${raw['name']} ${raw['description']}'.toLowerCase().contains(query)) Builder(builder: (context) {
             final item = Map<String, dynamic>.from(raw as Map);
             return Card(clipBehavior: Clip.antiAlias, child: InkWell(onTap: () => itemDetails(item), child: Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item['name'] as String, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 7), Text(item['description'] as String, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)), const SizedBox(height: 14), Text('${item['currency']} ${priceText(item['priceMinor'] as int)}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppBrand.ink))])),
-              const SizedBox(width: 12), SizedBox(width: 94, child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(14), child: item['photoUrl'] == null ? Container(height: 80, color: AppBrand.canvas, alignment: Alignment.center, child: const Icon(Icons.restaurant_rounded, color: AppBrand.orange, size: 32)) : Image.network(widget.api.imageUrl(item['photoUrl'] as String), height: 80, width: 94, fit: BoxFit.cover, errorBuilder: (_, error, stack) => const SizedBox(height: 80, child: Icon(Icons.restaurant_rounded, color: AppBrand.orange)))), const SizedBox(height: 8), SizedBox(width: double.infinity, child: OutlinedButton(onPressed: (shopping.lines[item['id']]?.quantity ?? 0) >= 99 ? null : () => addToBasket(item), child: const Text('Add')))])),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item['name'] as String, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 7), Text(item['description'] as String, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)), const SizedBox(height: 14), Text('${item['currency']} ${priceText(item['priceMinor'] as int)}', style: const TextStyle(fontWeight: FontWeight.w800))])),
+              const SizedBox(width: 12), SizedBox(width: 94, child: Column(children: [ClipRRect(borderRadius: BorderRadius.circular(14), child: item['photoUrl'] == null ? Container(height: 80, color: Theme.of(context).scaffoldBackgroundColor, alignment: Alignment.center, child: Icon(Icons.restaurant_rounded, color: Theme.of(context).colorScheme.primary, size: 32)) : Image.network(widget.api.imageUrl(item['photoUrl'] as String), height: 80, width: 94, fit: BoxFit.cover, errorBuilder: (_, error, stack) => SizedBox(height: 80, child: Icon(Icons.restaurant_rounded, color: Theme.of(context).colorScheme.primary)))), const SizedBox(height: 8), SizedBox(width: double.infinity, child: OutlinedButton(onPressed: (shopping.lines[item['id']]?.quantity ?? 0) >= 99 ? null : () => addToBasket(item), child: const Text('Add')))])),
             ]))));
           }),
         ],
-        const SizedBox(height: 24), Text(widget.previewMenu == null ? 'Test orders only. No payment required.' : 'Offline menu preview.', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+        const SizedBox(height: 24), Text(widget.previewMenu == null ? 'Local test orders with simulated payment. No real charges.' : 'Offline menu preview.', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
       ])),
     );
   });

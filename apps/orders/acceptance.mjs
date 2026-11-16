@@ -61,7 +61,14 @@ try{
   start(['--worker']);
   for(let i=0;i<40;i++){if((await db.query('SELECT * FROM order_activity')).rowCount===2)break;await new Promise(r=>setTimeout(r,150));}
   assert.equal((await db.query('SELECT * FROM outbox WHERE processed_at IS NOT NULL')).rowCount,2);
+  const stopped=children.pop();const stoppedExit=once(stopped,'exit');stopped.kill();await stoppedExit;
   const fresh=await call('/orders',owner,{...b,key:randomUUID(),review:current()}).then(r=>r.json());
+  assert.ok((await db.query('SELECT 1 FROM outbox WHERE processed_at IS NULL')).rowCount>0);
+  start(['--worker']);
+  for(let i=0;i<40;i++){if(!(await db.query('SELECT 1 FROM outbox WHERE processed_at IS NULL')).rowCount)break;await new Promise(r=>setTimeout(r,150));}
+  assert.equal((await db.query('SELECT 1 FROM outbox WHERE processed_at IS NULL')).rowCount,0);
+  assert.equal((await db.query('SELECT count(*) n FROM order_activity')).rows[0].n,'3');
+  console.log('PASS: restarted order worker resumes persisted pending work without duplicate activity');
   const serviceToken=env.PAYMENTS_ORDER_TOKEN;
   assert.ok(serviceToken);
   const attempt=randomUUID();
@@ -159,6 +166,42 @@ try{
   console.log('PASS: rejection and expiry enqueue one refund review and prevent dispatch.');
   console.log('PASS: kitchen ownership, polling without alerts, concurrent acceptance, preparing and ready.');
   console.log('PASS: concurrent checkout, retained snapshot, stale quote, key conflict, ownership, invalid transitions and outbox processing.');
+  const pilotPath='/orders/admin/pilot';
+  const change=async(action,settings={},expected=200)=>{
+    const {control}=await call(pilotPath,'admin').then(r=>r.json());
+    const response=await call(pilotPath,'admin',{action,version:control.version,reason:'Local pilot acceptance check',...settings});
+    assert.equal(response.status,expected);
+    return response.json();
+  };
+  const now=Date.now(),iso=offset=>new Date(now+offset).toISOString();
+  const settings={opensAt:iso(-60000),closesAt:iso(3600000),cap:1,restaurants:['kitchen']};
+  const intent=overrides=>({...b,key:randomUUID(),review:current(),...overrides});
+  assert.equal((await call(pilotPath,owner)).status,403);
+  assert.equal((await call(pilotPath,owner,{action:'pause',version:0,reason:'Unauthorized pilot change'})).status,403);
+  await change('pause');
+  await change('configure',{...settings,opensAt:iso(1800000)});
+  await change('resume');
+  assert.match((await call('/orders',owner,intent()).then(r=>r.json())).message,/staffed hours/);
+  await change('pause');
+  await change('configure',settings);
+  await change('resume');
+  assert.match((await call('/orders',owner,intent({restaurantId:'other'})).then(r=>r.json())).message,/outside the local pilot/);
+  const pair=[intent(),intent()];
+  const raced=await Promise.all(pair.map(input=>call('/orders',owner,input)));
+  assert.deepEqual(raced.map(r=>r.status).sort(),[200,409]);
+  const index=raced.findIndex(r=>r.ok);
+  const order=await raced[index].json();
+  const state=await call(pilotPath,'admin').then(r=>r.json());
+  assert.equal(state.control.admitted,1);
+  assert.equal(state.orders[0].id,order.id);
+  await change('pause');
+  await change('resume',{version:state.control.version},409);
+  await change('configure',settings,409);
+  assert.match((await call('/orders',owner,intent()).then(r=>r.json())).message,/paused/);
+  assert.equal((await call('/orders',owner,pair[index]).then(r=>r.json())).id,order.id);
+  assert.equal((await call('/orders/'+order.id+'/cancel',owner,{})).status,200);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM pilot_audit')).rows[0].n,7);
+  console.log('PASS: admin-only pilot controls, staffed hours, allowlist, concurrent cap, audited pause and existing orders.');
 }finally{
   for(const c of children)c.kill();
   api.close();await db.query('DROP SCHEMA '+schema+' CASCADE');await db.end();

@@ -1,4 +1,5 @@
 # Build the existing Android project when Gradle cannot verify workspace write access.
+param([switch]$Online, [switch]$PhysicalAndroid)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $mobile = Join-Path $root 'apps/mobile'
@@ -45,12 +46,15 @@ try {
     $sdk = $env:ANDROID_HOME
     if (!$sdk) { $sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
     $ndks = (Get-ChildItem (Join-Path $sdk 'ndk') -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'source.properties') }).Name -join ','
-    & ./android/gradlew.bat -p android --offline --no-problems-report :app:assembleDebug '-Ptarget-platform=android-x64' "-Pflutter.androidSdkRoot=$sdk" "-Pflutter.installedNdkVersions=$ndks" "-Pdart-defines=$apiDefine"
+    $gradleMode = if (!$Online) { @('--offline') } else { @() }
+    $target = if ($PhysicalAndroid) { 'android-arm,android-arm64' } else { 'android-x64' }
+    & ./android/gradlew.bat -p android @gradleMode --no-problems-report :app:assembleDebug "-Ptarget-platform=$target" "-Pflutter.androidSdkRoot=$sdk" "-Pflutter.installedNdkVersions=$ndks" "-Pdart-defines=$apiDefine"
     if ($LASTEXITCODE -ne 0) { throw "Android build failed in $app" }
     $output = Join-Path $mobile 'build/app/outputs/flutter-apk'
     New-Item -ItemType Directory -Force $output | Out-Null
-    Copy-Item "$outputRoot/app/outputs/flutter-apk/app-debug.apk" $output -Force
-    $apk = Join-Path $output 'app-debug.apk'
+    $name = if ($PhysicalAndroid) { 'waweigg-android-usb.apk' } else { 'app-debug.apk' }
+    $apk = Join-Path $output $name
+    Copy-Item "$outputRoot/app/outputs/flutter-apk/app-debug.apk" $apk -Force
     (Get-FileHash -LiteralPath $apk -Algorithm SHA1).Hash.ToLowerInvariant() | Set-Content "$apk.sha1" -NoNewline
 } finally {
     Pop-Location
