@@ -7,6 +7,7 @@ import 'api_client.dart';
 import 'account_settings.dart';
 import 'restaurant_screens.dart';
 import 'brand.dart';
+import 'partner_widgets.dart';
 
 enum AuthMode { signIn, signUp, recover, reset }
 
@@ -237,16 +238,22 @@ class _IdentityScreenState extends State<IdentityScreen>
       ],
     ),
     body: SafeArea(
-      child: Center(
+      child: Align(
+        // Workspaces start at the top; authentication stays vertically balanced.
+        alignment: dashboard == null ? Alignment.center : Alignment.topCenter,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: dashboard == null
+              ? const EdgeInsets.all(24)
+              : AppBrand.pageInsets(context),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 500),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (dashboard != null)
-                  ...dashboardView()
+                  ...dashboardView().expand(
+                    (child) => [child, const SizedBox(height: 10)],
+                  )
                 else if (widget.api.signedIn) ...[
                   if (!busy)
                     OutlinedButton(
@@ -292,8 +299,6 @@ class _IdentityScreenState extends State<IdentityScreen>
       ),
       child: Row(
         children: [
-          const BrandLogo(height: 72),
-          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,12 +479,32 @@ class _IdentityScreenState extends State<IdentityScreen>
       _ => 'Customer',
     };
     return [
-      Text(
-        '$roleName dashboard',
-        style: Theme.of(context).textTheme.headlineMedium,
-      ),
-      const SizedBox(height: 12),
-      Text('Welcome, ${user['name']}'),
+      if (role == 'RESTAURANT' || role == 'DRIVER') ...[
+        PartnerHero(
+          eyebrow: 'waweigg partners',
+          title: '$roleName dashboard',
+          message:
+              'Welcome, ${user['name']}. ${role == 'RESTAURANT' ? 'Good food starts with your kitchen.' : 'Your next delivery starts here.'}',
+          icon: role == 'RESTAURANT'
+              ? Icons.storefront_outlined
+              : Icons.delivery_dining_outlined,
+        ),
+        PartnerSection(
+          title: role == 'RESTAURANT'
+              ? 'Restaurant workspace'
+              : 'Delivery workspace',
+          subtitle: role == 'RESTAURANT'
+              ? 'Menus, orders and pickup preparation.'
+              : 'Availability, offers and active deliveries.',
+        ),
+      ] else ...[
+        Text(
+          '$roleName dashboard',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 12),
+        Text('Welcome, ${user['name']}'),
+      ],
       if (role == 'CUSTOMER' || role == 'DRIVER')
         OutlinedButton(
           onPressed: () => Navigator.push(

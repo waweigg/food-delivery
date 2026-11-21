@@ -1,3 +1,4 @@
+import 'restaurant_cover.dart';
 import 'location_picker.dart';
 import 'payment_screen.dart';
 import 'dart:convert';
@@ -208,8 +209,6 @@ class _StorefrontState extends State<Storefront> {
           children: [
             Row(
               children: [
-                const BrandLogo(height: 42),
-                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'waweigg',
@@ -285,7 +284,7 @@ class _StorefrontState extends State<Storefront> {
                 saved
                     ? 'Your nearby favourites'
                     : 'Restaurants delivering to you',
-                style: Theme.of(context).textTheme.headlineSmall,
+                style: Theme.of(context).textTheme.headlineMedium,
               ),
               if (restaurants.every((r) => r['isOpen'] != true))
                 const Padding(
@@ -314,6 +313,7 @@ class _StorefrontState extends State<Storefront> {
               const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
+                runSpacing: 8,
                 children: [
                   ChoiceChip(
                     label: const Text('All restaurants'),
@@ -327,6 +327,7 @@ class _StorefrontState extends State<Storefront> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
               if (busy) const LinearProgressIndicator(),
               if (filtered.isEmpty)
                 EmptyPanel(
@@ -425,86 +426,93 @@ class RestaurantTile extends StatelessWidget {
   final Map<String, dynamic> restaurant;
   final bool saved;
   final VoidCallback onSave, onTap;
+
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 112,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: Theme.of(context).brightness == Brightness.dark
-                    ? const [Color(0xFF263945), Color(0xFF482D20)]
-                    : const [Color(0xFFE7F0F7), Color(0xFFF9E6D7)],
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.storefront_rounded,
-                  size: 58,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const Spacer(),
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton.filledTonal(
-                    onPressed: onSave,
-                    tooltip: saved ? 'Unsave restaurant' : 'Save restaurant',
-                    icon: Icon(saved ? Icons.favorite : Icons.favorite_border),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  restaurant['name'] as String,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  restaurant['address'] as String,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    StatusPill(
-                      restaurant['isOpen'] == true
-                          ? 'Open now'
-                          : 'Currently closed',
-                      positive: restaurant['isOpen'] == true,
-                    ),
-                    Text(
-                      'View menu →',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final id = restaurant['id'] as String;
+    final local = id.startsWith('mlp-demo-');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Stack(
+                children: [
+                  RestaurantCover(restaurantId: id),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: theme.colorScheme.surface,
+                        foregroundColor: saved
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface,
                       ),
+                      onPressed: onSave,
+                      tooltip: saved ? 'Unsave restaurant' : 'Save restaurant',
+                      icon: Icon(
+                        saved
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      restaurant['name'] as String,
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      local
+                          ? 'Kerala cuisine · Malappuram · Sample restaurant'
+                          : restaurant['address'] as String,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: StatusPill(
+                              restaurant['isOpen'] == true
+                                  ? 'Open now'
+                                  : 'Currently closed',
+                              positive: restaurant['isOpen'] == true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Icon(
+                          Icons.arrow_forward_rounded,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 Future<void> editDeliveryAddress(

@@ -64,6 +64,11 @@ void main() {
       MaterialApp(home: DriverScreen(api: DispatchApi())),
     );
     await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.text('Confirm pickup'),
+      find.byType(ListView),
+      const Offset(0, -250),
+    );
     expect(find.text('Confirm pickup'), findsOneWidget);
     expect(find.text('Accept offer'), findsNothing);
     await tester.pumpWidget(const SizedBox());

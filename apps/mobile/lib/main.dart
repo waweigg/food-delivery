@@ -4,6 +4,7 @@ import 'account_settings.dart';
 import 'api_client.dart';
 import 'brand.dart';
 import 'storefront.dart';
+import 'startup_screen.dart';
 
 void main() => runApp(const FoodDeliveryApp());
 
@@ -30,6 +31,7 @@ class _FoodDeliveryAppState extends State<FoodDeliveryApp> {
   late final api = widget.api ?? ApiClient(storage: storage);
   ThemeMode mode = ThemeMode.system;
   bool ready = false;
+  bool entranceFinished = false;
   Future<void> preferenceWrite = Future.value();
 
   @override
@@ -75,14 +77,14 @@ class _FoodDeliveryAppState extends State<FoodDeliveryApp> {
       theme: AppBrand.theme,
       darkTheme: AppBrand.darkTheme,
       themeMode: mode,
-      home: ready
+      home: ready && entranceFinished
           ? Storefront(api: api)
-          : const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(
-                  semanticsLabel: 'Opening waweigg',
-                ),
-              ),
+          : StartupScreen(
+              onFinished: () {
+                if (mounted && !entranceFinished) {
+                  setState(() => entranceFinished = true);
+                }
+              },
             ),
     ),
   );

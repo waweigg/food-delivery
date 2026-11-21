@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Shared source artwork. Keep the original aspect ratio and colors.
+/// Shared typography, colors and spacing.
 class AppBrand {
-  static const logoAsset = 'assets/branding/logo.png';
   static const blue = Color(0xFF2484CC);
   // Darker UI accent keeps small text legible on white and peach surfaces.
   static const orange = Color(0xFFAA4D0E);
@@ -155,19 +154,6 @@ class AppBrand {
   }
 }
 
-class BrandLogo extends StatelessWidget {
-  const BrandLogo({super.key, this.height = 40});
-  final double height;
-  @override
-  Widget build(BuildContext context) => Image.asset(
-    AppBrand.logoAsset,
-    height: height,
-    width: height * 0.75,
-    fit: BoxFit.contain,
-    semanticLabel: 'waweigg logo',
-  );
-}
-
 class EmptyPanel extends StatelessWidget {
   const EmptyPanel({
     super.key,
@@ -240,13 +226,9 @@ class BrandTitle extends StatelessWidget {
   const BrandTitle(this.title, {super.key});
   final String title;
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      const BrandLogo(height: 36),
-      const SizedBox(width: 12),
-      Flexible(
-        child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-    ],
+  Widget build(BuildContext context) => Text(
+    title,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
   );
 }

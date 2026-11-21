@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'api_client.dart';
 import 'brand.dart';
+import 'partner_widgets.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key, required this.api, this.admin = false});
@@ -253,6 +254,11 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
     pin.clear();
     if (result['state'] == 'DELIVERED') {
       completed = 'Delivery completed. You can receive another offer.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delivery complete. Thank you!')),
+        );
+      }
     }
     await refresh();
   }
@@ -272,16 +278,11 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
       ],
     ),
     body: ListView(
-      padding: const EdgeInsets.all(20),
+      padding: AppBrand.pageInsets(context),
       children: [
         if (busy || !loaded) const LinearProgressIndicator(),
         if (completed != null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(completed!),
-            ),
-          ),
+          PartnerNote(message: completed!, icon: Icons.check_circle_outline),
         if (error != null && deliveries.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -332,17 +333,16 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
               ),
             ),
         ] else if (loaded && profile == null) ...[
-          Icon(
-            Icons.delivery_dining,
-            size: 70,
-            color: Theme.of(context).colorScheme.primary,
+          const PartnerHero(
+            eyebrow: 'waweigg delivery',
+            title: 'Your next route starts here',
+            message:
+                'Apply to deliver. An administrator must approve your profile before you can go online.',
+            icon: Icons.delivery_dining_outlined,
           ),
-          Text(
-            'Your next route starts here',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const Text(
-            'Apply to deliver. An administrator must approve your profile before you can go online.',
+          const PartnerSection(
+            title: 'Join the delivery team',
+            subtitle: 'Tell us about you and your vehicle.',
           ),
           TextField(
             controller: name,
@@ -376,82 +376,110 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
             child: const Text('Submit driver application'),
           ),
         ] else if (profile != null) ...[
-          Card(
-            color: online
-                ? (Theme.of(context).brightness == Brightness.dark
-                      ? Colors.green.shade900
-                      : Colors.green.shade50)
-                : Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.delivery_dining,
-                    size: 64,
-                    color: online
-                        ? (Theme.of(context).brightness == Brightness.dark
-                              ? Colors.green.shade200
-                              : Colors.green.shade700)
-                        : Theme.of(context).colorScheme.primary,
-                  ),
-                  Text(
-                    online ? 'You are online' : 'You are offline',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  Text('${profile!['name']} · ${profile!['status']}'),
-                  const SizedBox(height: 12),
-                  if (profile!['status'] == 'APPROVED')
-                    FilledButton(
-                      onPressed: busy
-                          ? null
-                          : () => run(online ? offline : goOnline),
-                      child: Text(online ? 'Go offline' : 'Go online'),
-                    )
-                  else
-                    const Text('Administrator approval is required.'),
-                ],
+          PartnerHero(
+            eyebrow: 'waweigg delivery',
+            title: online ? 'You are online' : 'You are offline',
+            message: '${profile!['name']} · ${profile!['status']}',
+            icon: Icons.delivery_dining_outlined,
+            action: profile!['status'] == 'APPROVED'
+                ? FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () => run(online ? offline : goOnline),
+                    child: Text(online ? 'Go offline' : 'Go online'),
+                  )
+                : const Text('Administrator approval is required.'),
+          ),
+          PartnerSection(
+            title: 'Your delivery desk',
+            subtitle: online
+                ? 'Available for nearby pickups'
+                : 'Go online when you are ready',
+          ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              StatusPill(
+                '${deliveries.length} active deliveries',
+                positive: deliveries.isNotEmpty,
               ),
-            ),
+              StatusPill(
+                '${offers.where((o) => o['state'] == 'PENDING').length} new offers',
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          const Text(
-            'Foreground pilot: keep this screen open and your phone unlocked. Reconnect and tap Go online after interruptions. A location older than 60 seconds cannot receive offers.',
+          const ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text('Location & availability'),
+            leading: Icon(Icons.location_on_outlined),
+            children: [
+              PartnerNote(
+                message:
+                    'Keep this screen open and your phone unlocked while online. Location updates stop when you leave. Reconnect after interruptions; a location older than 60 seconds cannot receive offers.',
+                icon: Icons.location_on_outlined,
+              ),
+            ],
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Incoming offers',
-            style: Theme.of(context).textTheme.titleLarge,
+          const PartnerSection(
+            title: 'Incoming offers',
+            subtitle: 'Your pickups and active delivery details.',
           ),
           if (offers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Text(
-                'No delivery offers yet. Stay online to receive nearby pickups.',
-              ),
+            const EmptyPanel(
+              icon: Icons.route_outlined,
+              title: 'Your next pickup is on its way',
+              message:
+                  'No delivery offers yet. Stay online to receive nearby pickups.',
             ),
           for (final o in offers)
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        StatusPill(
+                          '${o['state']}',
+                          positive: o['state'] == 'ACCEPTED',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Text(
-                      o['pickup'],
+                      'Order ${o['order_id'].toString().substring(0, 8)}',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    Text(
-                      'Order ${o['order_id'].toString().substring(0, 8)} · ${o['state']}',
+                    DeliveryStep(
+                      title: 'Pickup',
+                      detail: o['pickup'],
+                      icon: Icons.storefront_outlined,
                     ),
                     if (o['state'] == 'PENDING') ...[
                       Text(
                         'Respond before ${DateTime.parse(o['expires_at']).toLocal()}',
                       ),
-                      Row(
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
                         children: [
                           for (final action in ['accept', 'decline'])
-                            TextButton(
+                            OutlinedButton(
+                              style: action == 'accept'
+                                  ? OutlinedButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
+                                    )
+                                  : null,
                               onPressed: busy
                                   ? null
                                   : () => run(() async {
@@ -473,13 +501,19 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
                       if (error != null &&
                           deliveries[o['order_id']]['state'] != 'PICKED_UP')
                         Text(error!),
-                      Text(
-                        'Restaurant ready · ${deliveries[o['order_id']]['state']}',
+                      StatusPill(
+                        deliveries[o['order_id']]['state'] == 'PICKED_UP'
+                            ? 'On the way to customer'
+                            : 'Ready for pickup',
+                        positive: true,
                       ),
                       if (deliveries[o['order_id']]['address'] != null) ...[
                         const SizedBox(height: 12),
-                        Text(
-                          'Deliver to: ${deliveries[o['order_id']]['address']['street']}',
+                        DeliveryStep(
+                          title: 'Deliver to',
+                          detail:
+                              deliveries[o['order_id']]['address']['street'],
+                          icon: Icons.location_on_outlined,
                         ),
                         Text(
                           'Phone: ${deliveries[o['order_id']]['address']['phone'] ?? ''}',
@@ -494,14 +528,21 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
                           'Support review: ${deliveries[o['order_id']]['issue']}',
                         ),
                       if (deliveries[o['order_id']]['state'] == 'ASSIGNED')
-                        FilledButton(
-                          onPressed: busy
-                              ? null
-                              : () => run(() => progress(o, 'pickup')),
-                          child: const Text('Confirm pickup'),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => run(() => progress(o, 'pickup')),
+                              child: const Text('Confirm pickup'),
+                            ),
+                          ),
                         ),
                       if (deliveries[o['order_id']]['state'] ==
                           'PICKED_UP') ...[
+                        const SizedBox(height: 20),
                         const Text(
                           'Ask for the customer PIN only after handing over the food.',
                         ),
@@ -515,11 +556,14 @@ class _DriverState extends State<DriverScreen> with WidgetsBindingObserver {
                             labelText: 'Customer delivery PIN',
                           ),
                         ),
-                        FilledButton(
-                          onPressed: busy
-                              ? null
-                              : () => run(() => progress(o, 'deliver')),
-                          child: const Text('Complete delivery'),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: busy
+                                ? null
+                                : () => run(() => progress(o, 'deliver')),
+                            child: const Text('Complete delivery'),
+                          ),
                         ),
                       ],
                       if ([

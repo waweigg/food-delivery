@@ -64,7 +64,11 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: DriverScreen(api: api)));
       await tester.pumpAndSettle();
       expect(find.text('Complete delivery'), findsNothing);
-      await tester.ensureVisible(find.text('Confirm pickup'));
+      await tester.dragUntilVisible(
+        find.text('Confirm pickup'),
+        find.byType(ListView),
+        const Offset(0, -250),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm pickup'));
       await tester.pump(const Duration(milliseconds: 400));
@@ -89,6 +93,12 @@ void main() {
       await tester.tap(find.text('Complete delivery'));
       await tester.pumpAndSettle();
       expect(api.state, 'DELIVERED');
+      expect(find.text('Delivery complete. Thank you!'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.textContaining('Delivery completed.'),
+        find.byType(ListView),
+        const Offset(0, 300),
+      );
       expect(find.textContaining('Delivery completed.'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
