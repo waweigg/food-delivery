@@ -3,7 +3,10 @@ import {randomBytes} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 process.chdir(fileURLToPath(new URL('..',import.meta.url)));
-const base='http://localhost:8088',file='.local/demo-credentials.json';mkdirSync('.local',{recursive:true});
+const base=(process.env.DEMO_BASE_URL||'http://localhost:8088').replace(/\/$/,'');
+const target=new URL(base);
+if(target.protocol!=='http:'||!['localhost','127.0.0.1'].includes(target.hostname)||target.username||target.password||target.pathname!=='/'||target.search||target.hash)throw Error('Demo fixtures require a local loopback HTTP gateway');
+const file='.local/demo-credentials.json';mkdirSync('.local',{recursive:true});
 const accounts=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):{};
 const roles=['customer','restaurant','delivery','admin'];
 for(const role of roles){

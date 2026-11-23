@@ -1,6 +1,8 @@
 # waweigg local demo
 
-The brand spelling is **waweigg**. Android/iOS app display names, mobile headings, accessibility labels, admin website and payment description use this spelling. Internal package IDs and Docker volumes are retained so existing installations and data remain intact. The supplied logo remains unchanged.
+The brand spelling is **waweigg**. Screen branding and the animated startup use text. Internal package IDs, launcher assets and Docker volumes are retained so existing installations and data remain intact.
+
+**New partner laptop? Start with [the one-command Android setup guide](partner-setup.md).** It creates local configuration and accounts and uses the SDK/phone connected to that laptop.
 
 ## Open each role
 
@@ -25,7 +27,9 @@ Day 11: customer My test orders → paid order shows the delivery PIN and tracki
 
 ## Test on a physical phone
 
-**Android using the Windows PC:** Start the local Docker services and keep the gateway on loopback. Build an ARM64 test APK from the repository root with `powershell -File scripts/build-pixel-apk.ps1 -PhysicalAndroid` (add `-Online` if Gradle needs dependencies). The output is `apps/mobile/build/app/outputs/flutter-apk/waweigg-android-usb.apk`. On the phone, enable USB debugging, connect it to the PC and accept its USB debugging prompt. Run the following from a terminal with Android platform-tools on PATH:
+**Android on a partner's Windows laptop:** Use `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-partner.ps1`. See [prerequisites and options](partner-setup.md).
+
+**Original developer PC build workaround:** `scripts/build-pixel-apk.ps1 -PhysicalAndroid` uses the original checkout's sibling `work/flutter` folder and is not the partner setup command. It produces `apps/mobile/build/app/outputs/flutter-apk/waweigg-android-usb.apk` (add `-Online` if Gradle needs dependencies). For manual installation of that build with a phone connected and authorized:
 
 ```powershell
 adb -d reverse tcp:8088 tcp:8088
